@@ -1092,6 +1092,7 @@ module.exports = async (req, res) => {
                 }
             }
 
+            const method = torrentBuffer ? ".torrent" : "magnet";
             const results = await Promise.all(rdAccounts.map(async (acc) => {
                 if (!acc.key) return `${acc.label}: falta configurar su clave en el servidor`;
                 const rdResult = await triggerRealDebridCache(acc.key, parsed.infoHash, parsed.sources, torrentBuffer);
@@ -1100,7 +1101,7 @@ module.exports = async (req, res) => {
                     ? `${acc.label}: ya cacheado, listo al instante`
                     : `${acc.label}: pedido a RD, puede tardar según seeders`;
             }));
-            rdNote = " Real-Debrid — " + results.join(" · ") + ".";
+            rdNote = ` Real-Debrid (subido como ${method}) — ` + results.join(" · ") + ".";
         }
 
         const successMsg = `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
