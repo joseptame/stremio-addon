@@ -22,26 +22,5 @@
     "title": "Los Simpsons la pelicula",
     "name": "The Simpsons Movie",
     "poster": "https://images.metahub.space/poster/small/tt0462538/img"
-  },
-  "tt33764258": {
-    "infoHash": "48aeb057454aafacaa00614aa6be73ac7cc29cbb",
-    "sources": [
-      "tracker:udp://tracker.opentrackr.org:1337",
-      "tracker:udp://open.stealth.si:80/announce",
-      "tracker:udp://tracker.torrent.eu.org:451/announce",
-      "tracker:udp://tracker.bittor.pw:1337/announce",
-      "tracker:udp://public.popcorn-tracker.org:6969/announce",
-      "tracker:udp://tracker.dler.org:6969/announce",
-      "tracker:udp://exodus.desync.com:6969",
-      "tracker:udp://open.demonii.com:1337/announce",
-      "tracker:udp://glotorrents.pw:6969/announce",
-      "tracker:udp://tracker.coppersurfer.tk:6969",
-      "tracker:udp://torrent.gresille.org:80/announce",
-      "tracker:udp://p4p.arenabg.com:1337",
-      "tracker:udp://tracker.internetwarriors.net:1337"
-    ],
-    "title": "La Odisea",
-    "name": "The Odyssey",
-    "poster": "https://images.metahub.space/poster/small/tt33764258/img"
   }
 }
