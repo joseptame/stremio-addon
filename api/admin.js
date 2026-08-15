@@ -553,6 +553,7 @@ function renderAddPage({ message, editId, values }) {
                 <option value="tv">Serie</option>
                 <option value="all">Todo</option>
               </select>
+              <label class="checkbox-label"><input type="checkbox" id="prowlarr-es"> Solo español de España</label>
               <button type="button" id="prowlarr-search-btn" class="btn btn-edit">Buscar</button>
             </div>
             <div class="table-wrap">
@@ -728,6 +729,7 @@ function renderAddPage({ message, editId, values }) {
     (function () {
       var queryInput = document.getElementById('prowlarr-query');
       var scopeSelect = document.getElementById('prowlarr-scope');
+      var esCheckbox = document.getElementById('prowlarr-es');
       var searchBtn = document.getElementById('prowlarr-search-btn');
       var tbody = document.getElementById('prowlarr-tbody');
       var magnetInput = document.getElementById('magnet');
@@ -755,10 +757,11 @@ function renderAddPage({ message, editId, values }) {
       }
 
       function sortedResults() {
-        if (!sortState.key) return lastResults;
+        var filtered = esCheckbox.checked ? lastResults.filter(function (r) { return r.isSpainSpanish; }) : lastResults;
+        if (!sortState.key) return filtered;
         var key = sortState.key;
         var dir = sortState.dir;
-        return lastResults.slice().sort(function (a, b) {
+        return filtered.slice().sort(function (a, b) {
           var av = a[key];
           var bv = b[key];
           if (av == null && bv == null) return 0;
@@ -796,7 +799,7 @@ function renderAddPage({ message, editId, values }) {
       function renderResults() {
         var results = sortedResults();
         if (results.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">Sin resultados.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">Sin resultados' + (esCheckbox.checked ? ' en español de España' : '') + '.</td></tr>';
           return;
         }
         tbody.innerHTML = results.map(function (r) {
@@ -891,6 +894,7 @@ function renderAddPage({ message, editId, values }) {
       }
 
       searchBtn.addEventListener('click', runSearch);
+      esCheckbox.addEventListener('change', renderResults);
       queryInput.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
       });
