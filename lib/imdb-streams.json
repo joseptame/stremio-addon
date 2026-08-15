@@ -9,18 +9,5 @@
     "title": "Night of the Living Dead (1968) - Archive.org",
     "name": "Night of the Living Dead",
     "poster": "https://images.metahub.space/poster/small/tt0063350/img"
-  },
-  "tt0462538": {
-    "infoHash": "fbbae578e7a2126631428effe2df681ac5809a99",
-    "sources": [
-      "tracker:udp://tracker.coppersurfer.tk:6969/announce",
-      "tracker:udp://9.rarbg.me:2850/announce",
-      "tracker:udp://9.rarbg.to:2920/announce",
-      "tracker:udp://tracker.opentrackr.org:1337",
-      "tracker:udp://tracker.leechers-paradise.org:6969/announce"
-    ],
-    "title": "Los Simpsons la pelicula",
-    "name": "The Simpsons Movie",
-    "poster": "https://images.metahub.space/poster/small/tt0462538/img"
   }
 }
