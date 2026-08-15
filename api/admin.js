@@ -242,6 +242,28 @@ function baseStyles() {
   @media (prefers-reduced-motion: reduce) {
     .spinner { animation: none; border-top-color: var(--panel-border); }
   }
+  .pull-refresh-indicator {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    width: 34px;
+    height: 34px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 50%;
+    opacity: 0;
+    z-index: 200;
+    pointer-events: none;
+  }
+  .pull-refresh-indicator.visible { display: flex; }
+  .pull-refresh-indicator.spinning { animation: spin 0.6s linear infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .pull-refresh-indicator.spinning { animation: none; }
+  }
 `;
 }
 
@@ -323,6 +345,7 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
 <style>${baseStyles()}</style>
 </head>
 <body>
+  <div id="pull-refresh-indicator" class="pull-refresh-indicator">🔄</div>
   <div class="wrap">
     <header>
       <div class="header-row">
@@ -470,6 +493,56 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
       });
 
       render();
+    })();
+
+    // ── Arrastrar hacia abajo para recargar (solo instalada como PWA;
+    // en una pestaña normal del navegador ya existe el gesto nativo) ──
+    (function () {
+      var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      if (!isStandalone) return;
+
+      var indicator = document.getElementById('pull-refresh-indicator');
+      var threshold = 70;
+      var maxPull = 110;
+      var startY = 0;
+      var pulling = false;
+      var currentPull = 0;
+
+      document.addEventListener('touchstart', function (e) {
+        if (window.scrollY === 0) {
+          startY = e.touches[0].clientY;
+          pulling = true;
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchmove', function (e) {
+        if (!pulling) return;
+        var diff = e.touches[0].clientY - startY;
+        if (diff <= 0 || window.scrollY > 0) {
+          pulling = false;
+          indicator.classList.remove('visible');
+          indicator.style.opacity = 0;
+          return;
+        }
+        currentPull = Math.min(diff, maxPull);
+        indicator.classList.add('visible');
+        indicator.style.opacity = Math.min(currentPull / threshold, 1);
+        indicator.style.transform = 'translateX(-50%) translateY(' + currentPull + 'px) rotate(' + (currentPull * 3) + 'deg)';
+      }, { passive: true });
+
+      document.addEventListener('touchend', function () {
+        if (!pulling) return;
+        pulling = false;
+        if (currentPull >= threshold) {
+          indicator.classList.add('spinning');
+          indicator.style.transform = 'translateX(-50%) translateY(' + threshold + 'px)';
+          location.reload();
+        } else {
+          indicator.classList.remove('visible');
+          indicator.style.opacity = 0;
+        }
+        currentPull = 0;
+      });
     })();
   </script>
 </body>
