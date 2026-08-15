@@ -14,5 +14,14 @@
     "title": "Greyhound",
     "name": "Greyhound",
     "poster": "https://images.metahub.space/poster/small/tt6048922/img"
+  },
+  "tt1757678": {
+    "infoHash": "60a9d0d8967daf8b53415c533186b6fea302fb41",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Avatar: Fire and Ash",
+    "name": "Avatar: Fire and Ash",
+    "poster": "https://images.metahub.space/poster/small/tt1757678/img"
   }
 }
