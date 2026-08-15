@@ -1,4 +1,5 @@
 const { parseMagnet } = require("../lib/magnet");
+const { fetchCinemetaMeta } = require("../lib/cinemeta");
 
 const OWNER = "joseptame";
 const REPO = "stremio-addon";
@@ -89,6 +90,8 @@ module.exports = async (req, res) => {
         return res.status(500).send(renderForm('<div class="msg err">Falta configurar GITHUB_TOKEN en Vercel.</div>'));
     }
 
+    const cinemeta = await fetchCinemetaMeta(imdbId);
+
     try {
         const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
         const ghHeaders = {
@@ -106,6 +109,8 @@ module.exports = async (req, res) => {
             infoHash: parsed.infoHash,
             sources: parsed.sources,
             title: title.trim(),
+            name: (cinemeta && cinemeta.name) || title.trim(),
+            poster: (cinemeta && cinemeta.poster) || null,
         };
 
         const newContent = Buffer.from(JSON.stringify(current, null, 2) + "\n", "utf-8").toString("base64");
@@ -126,8 +131,12 @@ module.exports = async (req, res) => {
             throw new Error(`Error de la API de GitHub (${putRes.status}): ${errBody}`);
         }
 
+        const posterNote = cinemeta && cinemeta.poster
+            ? " Póster y nombre obtenidos de Cinemeta."
+            : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
+
         return res.status(200).send(
-            renderForm(`<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}. Vercel está redesplegando, estará online en ~1 min.</div>`)
+            renderForm(`<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${posterNote} Vercel está redesplegando, estará online en ~1 min.</div>`)
         );
     } catch (err) {
         return res.status(500).send(renderForm(`<div class="msg err">${escapeHtml(err.message)}</div>`));

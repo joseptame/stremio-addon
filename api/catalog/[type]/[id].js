@@ -1,4 +1,4 @@
-const { CORTOS } = require("../../../lib/data");
+const { CORTOS, IMDB_STREAMS } = require("../../../lib/data");
 
 module.exports = (req, res) => {
     res.setHeader("Content-Type", "application/json");
@@ -8,14 +8,22 @@ module.exports = (req, res) => {
     const id = String(req.query.id || "").replace(/\.json$/, "");
 
     if (type === "movie" && id === "cortos-catalogo") {
-        const metas = CORTOS.map((c) => ({
+        const cortosMetas = CORTOS.map((c) => ({
             id: c.id,
             type: c.type,
             name: c.name,
             poster: c.poster,
             description: c.description,
         }));
-        return res.status(200).json({ metas });
+
+        const imdbMetas = Object.entries(IMDB_STREAMS).map(([imdbId, s]) => ({
+            id: imdbId,
+            type: "movie",
+            name: s.name || s.title,
+            poster: s.poster || undefined,
+        }));
+
+        return res.status(200).json({ metas: [...cortosMetas, ...imdbMetas] });
     }
 
     return res.status(200).json({ metas: [] });
