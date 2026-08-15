@@ -57,8 +57,9 @@ module.exports = async (req, res) => {
         });
     }
 
-    // Stream P2P normal, siempre presente como opción de respaldo.
-    streams.push({ name, title, infoHash, sources });
+    // El stream P2P (infoHash) ya no se ofrece: solo se muestran opciones
+    // instantáneas (Real-Debrid o enlace directo). Si ninguna está
+    // disponible, no se devuelve ningún stream.
 
     return res.status(200).json({ streams });
 };
