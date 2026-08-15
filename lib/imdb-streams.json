@@ -5,18 +5,5 @@
     "title": "Los Simpsons la pelicula",
     "name": "The Simpsons Movie",
     "poster": "https://images.metahub.space/poster/small/tt0462538/img"
-  },
-  "tt6048922": {
-    "infoHash": "46e831a6256e3cb688b77625ca33292f8da53e2c",
-    "sources": [
-      "tracker:udp://tracker.coppersurfer.tk:6969/announce",
-      "tracker:udp://9.rarbg.me:2850/announce",
-      "tracker:udp://9.rarbg.to:2920/announce",
-      "tracker:udp://tracker.opentrackr.org:1337",
-      "tracker:udp://tracker.leechers-paradise.org:6969/announce"
-    ],
-    "title": "Greyhound",
-    "name": "Greyhound",
-    "poster": "https://images.metahub.space/poster/small/tt6048922/img"
   }
 }
