@@ -12,6 +12,7 @@ module.exports = async (req, res) => {
     let sources;
     let name;
     let title;
+    let directUrl;
 
     // Caso 1: uno de los cortos propios (id "cortos-*")
     const corto = CORTOS.find((c) => c.id === id);
@@ -20,6 +21,7 @@ module.exports = async (req, res) => {
         sources = corto.sources;
         name = "JFuster RD";
         title = corto.name;
+        directUrl = corto.url || null;
     } else if (id.startsWith("tt") && IMDB_STREAMS[id]) {
         // Caso 2: id de IMDb (tt...) -> engancha stream a una ficha ya existente
         const s = IMDB_STREAMS[id];
@@ -27,6 +29,7 @@ module.exports = async (req, res) => {
         sources = s.sources;
         name = "JFuster RD";
         title = s.title;
+        directUrl = s.url || null;
     } else {
         return res.status(200).json({ streams: [] });
     }
@@ -44,8 +47,17 @@ module.exports = async (req, res) => {
         }
     }
 
-    // Stream P2P normal, siempre presente como opción (o única opción si no
-    // hay clave de RD, o si RD no lo tiene cacheado al instante).
+    // Enlace HTTP directo (si lo hay): no depende de seeders ni de RD, es la
+    // opción más fiable cuando existe.
+    if (directUrl) {
+        streams.push({
+            name,
+            title: `${title} (directo)`,
+            url: directUrl,
+        });
+    }
+
+    // Stream P2P normal, siempre presente como opción de respaldo.
     streams.push({ name, title, infoHash, sources });
 
     return res.status(200).json({ streams });
