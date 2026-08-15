@@ -27,7 +27,7 @@
     "sources": [
       "tracker:udp://tracker.opentrackr.org:1337/announce"
     ],
-    "title": "Prueba edicion",
+    "title": "Prueba edicion (editado)",
     "name": "Prueba edicion",
     "poster": null
   }
