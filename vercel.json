@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/admin", "destination": "/api/admin" },
+    { "source": "/admin/add", "destination": "/api/admin?view=add" },
+    { "source": "/login", "destination": "/api/admin-login" },
     { "source": "/configure", "destination": "/api/configure" },
     { "source": "/manifest.json", "destination": "/api/manifest.json" },
     { "source": "/catalog/:type/:id.json", "destination": "/api/catalog/:type/:id" },

@@ -234,3 +234,25 @@ serveHTTP(builder.getInterface(), { port: process.env.PORT || 7000 });
   migrar los streams de `infoHash` a URLs HTTP directas (alojando los
   vídeos en algún storage), lo cual también es compatible con Vercel sin
   cambios estructurales grandes.
+
+## Buscador de torrents en /admin (Prowlarr)
+
+Además de pegar un magnet link a mano, el panel `/admin` tiene un botón
+"🔍 Buscar torrent (Prowlarr)" que busca por título en una instancia propia
+de [Prowlarr](https://github.com/Prowlarr/Prowlarr) (agregador de indexers),
+filtra por defecto los resultados que parecen estar en español de España
+(heurística sobre el título: "castellano", "español", etc., excluyendo
+"latino") y, al hacer clic en un resultado, rellena el campo de magnet
+automáticamente.
+
+Variables de entorno necesarias en Vercel:
+
+- `PROWLARR_URL`: URL base de tu instancia de Prowlarr, accesible desde
+  internet (Vercel no puede llegar a una IP de tu LAN local sin exponerla
+  primero, p. ej. vía Tailscale Funnel o Cloudflare Tunnel).
+- `PROWLARR_API_KEY`: API key de Prowlarr (Settings → General).
+
+El endpoint `/api/prowlarr-search` (POST, requiere `ADMIN_SECRET`) solo
+devuelve resultados de los que se puede construir un magnet link
+directamente (indexers de torrent con `infoHash` o `magnetUrl`); los
+resultados que solo ofrecen descarga de fichero `.torrent` se descartan.
