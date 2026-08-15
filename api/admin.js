@@ -244,25 +244,32 @@ function baseStyles() {
   }
   .pull-refresh-indicator {
     position: fixed;
-    top: 10px;
+    top: 14px;
     left: 50%;
-    width: 34px;
-    height: 34px;
-    display: none;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 36px;
+    display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.3rem;
+    color: var(--accent);
     background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     opacity: 0;
     z-index: 200;
     pointer-events: none;
+    transition: opacity 0.25s ease;
   }
-  .pull-refresh-indicator.visible { display: flex; }
-  .pull-refresh-indicator.spinning { animation: spin 0.6s linear infinite; }
+  .pull-refresh-indicator.visible { opacity: 1; }
+  .pull-refresh-indicator #pull-refresh-icon { transition: transform 0.15s ease; }
+  .pull-refresh-indicator.spinning #pull-refresh-icon { animation: spin 0.7s linear infinite; }
+  #main-wrap { transition: transform 0.25s ease; }
   @media (prefers-reduced-motion: reduce) {
-    .pull-refresh-indicator.spinning { animation: none; }
+    .pull-refresh-indicator { transition: none; }
+    .pull-refresh-indicator.spinning #pull-refresh-icon { animation: none; }
+    #main-wrap { transition: none; }
   }
 `;
 }
@@ -345,8 +352,14 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
 <style>${baseStyles()}</style>
 </head>
 <body>
-  <div id="pull-refresh-indicator" class="pull-refresh-indicator">🔄</div>
-  <div class="wrap">
+  <div id="pull-refresh-indicator" class="pull-refresh-indicator">
+    <svg id="pull-refresh-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <polyline points="1 20 1 14 7 14"></polyline>
+      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+    </svg>
+  </div>
+  <div class="wrap" id="main-wrap">
     <header>
       <div class="header-row">
         <div class="header-left">
@@ -496,22 +509,36 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
     })();
 
     // ── Arrastrar hacia abajo para recargar (solo instalada como PWA;
-    // en una pestaña normal del navegador ya existe el gesto nativo) ──
+    // en una pestaña normal del navegador ya existe el gesto nativo).
+    // El icono se queda fijo arriba y solo hace fundido de entrada/
+    // salida; lo que se mueve con el dedo es el contenido, como el
+    // pull-to-refresh nativo — así el icono nunca se superpone a nada. ──
     (function () {
       var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
       if (!isStandalone) return;
 
       var indicator = document.getElementById('pull-refresh-indicator');
+      var icon = document.getElementById('pull-refresh-icon');
+      var content = document.getElementById('main-wrap');
+      var revealAt = 18;
       var threshold = 70;
       var maxPull = 110;
       var startY = 0;
       var pulling = false;
       var currentPull = 0;
+      var visible = false;
+
+      function setVisible(show) {
+        if (show === visible) return;
+        visible = show;
+        indicator.classList.toggle('visible', show);
+      }
 
       document.addEventListener('touchstart', function (e) {
         if (window.scrollY === 0) {
           startY = e.touches[0].clientY;
           pulling = true;
+          content.style.transition = 'none';
         }
       }, { passive: true });
 
@@ -520,26 +547,28 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
         var diff = e.touches[0].clientY - startY;
         if (diff <= 0 || window.scrollY > 0) {
           pulling = false;
-          indicator.classList.remove('visible');
-          indicator.style.opacity = 0;
+          setVisible(false);
+          content.style.transition = 'transform 0.25s ease';
+          content.style.transform = '';
           return;
         }
         currentPull = Math.min(diff, maxPull);
-        indicator.classList.add('visible');
-        indicator.style.opacity = Math.min(currentPull / threshold, 1);
-        indicator.style.transform = 'translateX(-50%) translateY(' + currentPull + 'px) rotate(' + (currentPull * 3) + 'deg)';
+        content.style.transform = 'translateY(' + currentPull + 'px)';
+        setVisible(currentPull > revealAt);
+        icon.style.transform = 'rotate(' + (currentPull * 2) + 'deg)';
       }, { passive: true });
 
       document.addEventListener('touchend', function () {
         if (!pulling) return;
         pulling = false;
+        content.style.transition = 'transform 0.25s ease';
         if (currentPull >= threshold) {
           indicator.classList.add('spinning');
-          indicator.style.transform = 'translateX(-50%) translateY(' + threshold + 'px)';
+          icon.style.transform = '';
           location.reload();
         } else {
-          indicator.classList.remove('visible');
-          indicator.style.opacity = 0;
+          setVisible(false);
+          content.style.transform = '';
         }
         currentPull = 0;
       });
