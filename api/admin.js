@@ -131,7 +131,16 @@ function renderPage({ message, imdbStreams }) {
     max-height: 320px;
     overflow-y: auto;
     z-index: 50;
+    scrollbar-width: thin;
+    scrollbar-color: #3a3555 transparent;
   }
+  .autocomplete-results::-webkit-scrollbar { width: 8px; }
+  .autocomplete-results::-webkit-scrollbar-track { background: transparent; }
+  .autocomplete-results::-webkit-scrollbar-thumb {
+    background: #3a3555;
+    border-radius: 8px;
+  }
+  .autocomplete-results::-webkit-scrollbar-thumb:hover { background: var(--accent); }
   .autocomplete-results.open { display: block; }
   .autocomplete-item {
     display: flex;
