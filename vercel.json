@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/admin", "destination": "/api/admin" },
     { "source": "/manifest.json", "destination": "/api/manifest.json" },
     { "source": "/catalog/:type/:id.json", "destination": "/api/catalog/:type/:id" },
     { "source": "/meta/:type/:id.json", "destination": "/api/meta/:type/:id" },
