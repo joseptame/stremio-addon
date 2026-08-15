@@ -21,5 +21,14 @@
     "title": "Greyhound",
     "name": "Greyhound",
     "poster": "https://images.metahub.space/poster/small/tt6048922/img"
+  },
+  "tt12042730": {
+    "infoHash": "6aa3c04efe88dbdf827becd638babf589dc73aa2",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Project Hail Mary",
+    "name": "Project Hail Mary",
+    "poster": "https://images.metahub.space/poster/small/tt12042730/img"
   }
 }
