@@ -1,9 +1,15 @@
 {
   "rewrites": [
     { "source": "/admin", "destination": "/api/admin" },
+    { "source": "/configure", "destination": "/api/configure" },
     { "source": "/manifest.json", "destination": "/api/manifest.json" },
     { "source": "/catalog/:type/:id.json", "destination": "/api/catalog/:type/:id" },
     { "source": "/meta/:type/:id.json", "destination": "/api/meta/:type/:id" },
-    { "source": "/stream/:type/:id.json", "destination": "/api/stream/:type/:id" }
+    { "source": "/stream/:type/:id.json", "destination": "/api/stream/:type/:id" },
+    { "source": "/:config/configure", "destination": "/api/configure" },
+    { "source": "/:config/manifest.json", "destination": "/api/manifest.json?config=:config" },
+    { "source": "/:config/catalog/:type/:id.json", "destination": "/api/catalog/:type/:id?config=:config" },
+    { "source": "/:config/meta/:type/:id.json", "destination": "/api/meta/:type/:id?config=:config" },
+    { "source": "/:config/stream/:type/:id.json", "destination": "/api/stream/:type/:id?config=:config" }
   ]
 }
