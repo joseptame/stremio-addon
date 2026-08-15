@@ -1,0 +1,13 @@
+{
+  "name": "stremio-addon",
+  "version": "1.0.0",
+  "description": "Addon de Stremio (catálogo de cortos propios + streams de dominio público) desplegado en Vercel como funciones serverless.",
+  "scripts": {
+    "dev": "vercel dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {}
+}
