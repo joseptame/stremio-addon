@@ -1,6 +1,7 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
 const { triggerRealDebridCache } = require("../lib/realdebrid");
+const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
 
@@ -496,6 +497,7 @@ function renderAddPage({ message, editId, values }) {
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="prowlarrMode" id="prowlarrModeField" value="${v.prowlarrMode ? "1" : "0"}">
       <input type="hidden" name="imdbId" id="imdbId" value="${escapeHtml(v.imdbId)}">
+      <input type="hidden" name="downloadRef" id="downloadRefField" value="">
 
       <div class="sheet">
         <div class="card">
@@ -580,6 +582,7 @@ function renderAddPage({ message, editId, values }) {
       var magnetHintEl = document.getElementById('magnet-hint');
       var imdbIdField = document.getElementById('imdbId');
       var movieNameInput = document.getElementById('movieName');
+      var downloadRefField = document.getElementById('downloadRefField');
       var manualHintText = ${JSON.stringify(magnetHint)};
 
       function applyMode() {
@@ -592,9 +595,13 @@ function renderAddPage({ message, editId, values }) {
           ? 'Se rellena automáticamente al elegir un resultado de Prowlarr.'
           : manualHintText;
         magnetHintEl.style.color = '';
+        if (!isProwlarr) downloadRefField.value = '';
       }
 
       modeCheckbox.addEventListener('change', applyMode);
+      magnetInput.addEventListener('input', function () {
+        if (!magnetInput.readOnly) downloadRefField.value = '';
+      });
       applyMode();
 
       document.getElementById('main-form').addEventListener('submit', function (e) {
@@ -720,6 +727,7 @@ function renderAddPage({ message, editId, values }) {
       var tbody = document.getElementById('prowlarr-tbody');
       var magnetInput = document.getElementById('magnet');
       var magnetHintEl = document.getElementById('magnet-hint');
+      var downloadRefField = document.getElementById('downloadRefField');
       var sortHeaders = document.querySelectorAll('.results-table th.sortable');
       var lastResults = [];
       var sortState = { key: null, dir: -1 };
@@ -808,6 +816,10 @@ function renderAddPage({ message, editId, values }) {
           magnetInput.value = magnet;
           magnetHintEl.textContent = 'Seleccionado: ' + r.title;
           magnetHintEl.style.color = '';
+          // Si hay downloadRef, al guardar se sube el .torrent real a
+          // Real-Debrid en vez de un magnet (más fiable en trackers
+          // privados, donde a veces RD no consigue negociar metadatos).
+          downloadRefField.value = r.downloadRef || '';
           tbody.querySelectorAll('.prowlarr-row').forEach(function (el) { el.classList.remove('selected'); });
           row.classList.add('selected');
         }
@@ -945,7 +957,7 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, action, rdCacheJfuster, rdCacheIvan, prowlarrMode } = req.body || {};
+    const { imdbId, magnet, title, action, rdCacheJfuster, rdCacheIvan, prowlarrMode, downloadRef } = req.body || {};
 
     // ── Eliminar (siempre vuelve al listado) ───────────────────
     if (action === "delete") {
@@ -1065,9 +1077,24 @@ module.exports = async (req, res) => {
 
         let rdNote = "";
         if (rdAccounts.length > 0) {
+            // Si el magnet viene de un resultado de Prowlarr, se vuelve a
+            // descargar el .torrent real y se sube tal cual a RD en vez de
+            // un magnet: con magnet, RD necesita que algún peer le mande
+            // los metadatos antes de poder empezar, y en trackers privados
+            // eso a veces no ocurre aunque el torrent esté vivo (RD lo
+            // rechaza como "Invalid Magnet"). Con el .torrent ya los tiene.
+            let torrentBuffer = null;
+            if (downloadRef) {
+                try {
+                    torrentBuffer = await fetchTorrentBytes(downloadRef);
+                } catch {
+                    // Si falla, se sigue con el magnet como respaldo.
+                }
+            }
+
             const results = await Promise.all(rdAccounts.map(async (acc) => {
                 if (!acc.key) return `${acc.label}: falta configurar su clave en el servidor`;
-                const rdResult = await triggerRealDebridCache(acc.key, parsed.infoHash, parsed.sources);
+                const rdResult = await triggerRealDebridCache(acc.key, parsed.infoHash, parsed.sources, torrentBuffer);
                 if (!rdResult) return `${acc.label}: no se pudo contactar con RD`;
                 return rdResult.cached
                     ? `${acc.label}: ya cacheado, listo al instante`
