@@ -7,11 +7,9 @@ funcione en Vercel como funciones serverless, y quede accesible públicamente en
 una URL tipo `https://<proyecto>.vercel.app/manifest.json`.
 
 El addon sirve:
-1. Un catálogo propio de cortometrajes (identificados con `cortos-*`), servidos
-   vía torrent/magnet (infoHash).
+
 2. Streams enganchados a fichas ya existentes de Cinemeta/IMDb (identificados
-   con `tt...`), también vía infoHash — usados de momento solo para pruebas
-   con contenido de **dominio público**.
+   con `tt...`), también vía infoHash
 
 ## Por qué hay que adaptar el código
 
@@ -229,9 +227,6 @@ serveHTTP(builder.getInterface(), { port: process.env.PORT || 7000 });
 
 ## Notas importantes
 
-- El contenido servido debe ser **siempre de dominio público o propio**.
-  No añadir infoHashes de películas o series con copyright bajo ningún
-  concepto — ni en pruebas ni en producción.
 - Vercel no seedea nada: sigue haciendo falta que alguien (vosotros)
   mantenga el torrent activo con seeders para que el stream funcione,
   igual que en local.
