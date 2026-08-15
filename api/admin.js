@@ -172,7 +172,13 @@ function baseStyles() {
   #prowlarr-panel { margin-top: 4px; }
   .wrap.sheet-wrap { max-width: 980px; }
   .sheet { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
-  @media (max-width: 760px) { .sheet { grid-template-columns: 1fr; } }
+  /* Sin min-width:0 un hijo de grid no se encoge por debajo del contenido
+     que lleve dentro (aquí, la tabla de resultados) y se sale de pantalla. */
+  .sheet .card { min-width: 0; }
+  @media (max-width: 760px) {
+    .sheet { grid-template-columns: 1fr; }
+    .poster-preview { max-width: 200px; margin: 0 auto 6px; }
+  }
   .poster-preview {
     width: 100%;
     aspect-ratio: 2 / 3;
@@ -712,6 +718,11 @@ function renderAddPage({ message, editId, values }) {
         return div.innerHTML;
       }
 
+      window.handlePosterError = function (img) {
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+      };
+
       function formatSize(bytes) {
         if (!bytes) return '—';
         var gb = bytes / (1024 * 1024 * 1024);
@@ -766,7 +777,7 @@ function renderAddPage({ message, editId, values }) {
         tbody.innerHTML = results.map(function (r) {
           var i = lastResults.indexOf(r);
           var thumb = r.poster
-            ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">' +
+            ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy" onerror="handlePosterError(this)">' +
               '<div class="result-poster result-poster-placeholder" style="display:none"><span>No<br>Data</span></div>'
             : '<div class="result-poster result-poster-placeholder"><span>No<br>Data</span></div>';
           return '<tr class="prowlarr-row" data-idx="' + i + '">' +
