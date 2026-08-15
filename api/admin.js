@@ -39,7 +39,7 @@ function renderMovieList(imdbStreams) {
                     <input type="hidden" name="imdbId" value="${escapeHtml(imdbId)}">
                     <input type="hidden" name="action" value="delete">
                     <input type="hidden" name="secret" class="del-secret">
-                    <button type="submit" class="btn btn-delete">Eliminar</button>
+                    <button type="button" class="btn btn-delete delete-trigger" data-name="${name}">Eliminar</button>
                 </form>
             </div>
         </li>`;
@@ -175,6 +175,31 @@ function renderPage({ message, imdbStreams }) {
   .pagination button:hover:not(:disabled) { background: #383253; }
   .pagination button:disabled { opacity: 0.35; cursor: default; }
   .pagination span { color: var(--text-dim); font-size: 0.85rem; }
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 7, 14, 0.7);
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 100;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 22px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .modal h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .modal p { margin: 0; color: var(--text-dim); font-size: 0.85rem; line-height: 1.4; }
+  .modal .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .modal .modal-actions .btn { flex: 1; margin-top: 0; }
+  .btn-cancel { background: #2c2840; color: var(--text); }
+  .btn-cancel:hover { background: #383253; }
 </style>
 </head>
 <body>
@@ -231,27 +256,74 @@ function renderPage({ message, imdbStreams }) {
     </div>
   </div>
 
+  <div class="modal-overlay" id="delete-modal-overlay">
+    <div class="modal">
+      <h3>Eliminar película</h3>
+      <p id="delete-modal-text"></p>
+      <label for="delete-modal-secret">Contraseña de admin</label>
+      <input id="delete-modal-secret" type="password" autocomplete="off" placeholder="Contraseña de admin">
+      <div class="modal-actions">
+        <button type="button" class="btn btn-cancel" id="delete-modal-cancel">Cancelar</button>
+        <button type="button" class="btn btn-delete" id="delete-modal-confirm">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     document.getElementById('main-form').addEventListener('submit', function () {
       // nada que sincronizar, el campo secret ya vive en este form
     });
 
-    document.querySelectorAll('.delete-form').forEach(function (form) {
-      form.addEventListener('submit', function (e) {
-        var name = form.closest('.movie-item').querySelector('.name').textContent;
-        if (!confirm('¿Eliminar "' + name + '" del addon?')) {
-          e.preventDefault();
+    // ── Modal de confirmación para eliminar ───────────────────
+    (function () {
+      var overlay = document.getElementById('delete-modal-overlay');
+      var textEl = document.getElementById('delete-modal-text');
+      var secretInput = document.getElementById('delete-modal-secret');
+      var cancelBtn = document.getElementById('delete-modal-cancel');
+      var confirmBtn = document.getElementById('delete-modal-confirm');
+      var pendingForm = null;
+
+      function openModal(form, name) {
+        pendingForm = form;
+        textEl.textContent = 'Vas a eliminar "' + name + '" del addon. Esta acción no se puede deshacer.';
+        secretInput.value = '';
+        overlay.classList.add('open');
+        secretInput.focus();
+      }
+
+      function closeModal() {
+        overlay.classList.remove('open');
+        pendingForm = null;
+      }
+
+      function confirmDelete() {
+        if (!pendingForm) return;
+        if (!secretInput.value) {
+          secretInput.focus();
           return;
         }
-        var secretValue = document.getElementById('secret').value;
-        if (!secretValue) {
-          e.preventDefault();
-          alert('Escribe la contraseña de admin en el formulario de arriba primero.');
-          return;
-        }
-        form.querySelector('.del-secret').value = secretValue;
+        pendingForm.querySelector('.del-secret').value = secretInput.value;
+        pendingForm.submit();
+      }
+
+      document.querySelectorAll('.delete-trigger').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          openModal(btn.closest('form'), btn.dataset.name);
+        });
       });
-    });
+
+      cancelBtn.addEventListener('click', closeModal);
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) closeModal();
+      });
+      confirmBtn.addEventListener('click', confirmDelete);
+      secretInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') confirmDelete();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+      });
+    })();
 
     document.querySelectorAll('.edit-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
