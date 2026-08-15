@@ -214,12 +214,12 @@ function baseStyles() {
   .results-table tbody tr.selected { background: #2a2340; }
   .results-table .title-cell { max-width: 340px; }
   .results-table .go { color: var(--accent); white-space: nowrap; font-weight: 600; font-size: 0.8rem; }
-  .result-poster { width: 32px; height: 46px; object-fit: cover; border-radius: 4px; display: block; background: #100e1a; }
+  .result-poster { width: 32px; height: 46px; object-fit: cover; border-radius: 4px; display: block; background: #100e1a; flex-shrink: 0; }
   .result-poster-placeholder {
     display: flex; align-items: center; justify-content: center; text-align: center;
-    border: 1px dashed var(--panel-border); background: #100e1a;
+    box-sizing: border-box; border: 1px dashed var(--panel-border); background: #100e1a;
   }
-  .result-poster-placeholder span { font-size: 0.52rem; line-height: 1.2; color: var(--text-dim); }
+  .result-poster-placeholder span { font-size: 0.6rem; font-weight: 600; line-height: 1.15; color: var(--text-dim); }
   .loading-row { display: flex; align-items: center; gap: 10px; }
   .spinner {
     width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%;
@@ -715,7 +715,7 @@ function renderAddPage({ message, editId, values }) {
         tbody.innerHTML = results.map(function (r, i) {
           var thumb = r.poster
             ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy">'
-            : '<div class="result-poster result-poster-placeholder"><span>No<br>disponible</span></div>';
+            : '<div class="result-poster result-poster-placeholder"><span>No<br>Data</span></div>';
           return '<tr class="prowlarr-row" data-idx="' + i + '">' +
             '<td>' + thumb + '</td>' +
             '<td class="title-cell">' + escapeHtmlClient(r.title) + (r.isSpainSpanish ? ' 🇪🇸' : '') + '</td>' +
