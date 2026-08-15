@@ -5,5 +5,30 @@
     "title": "Los Simpsons la pelicula",
     "name": "The Simpsons Movie",
     "poster": "https://images.metahub.space/poster/small/tt0462538/img"
+  },
+  "tt1757678": {
+    "infoHash": "60a9d0d8967daf8b53415c533186b6fea302fb41",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Avatar: Fire and Ash",
+    "name": "Avatar: Fire and Ash",
+    "poster": "https://images.metahub.space/poster/small/tt1757678/img"
+  },
+  "tt6048922": {
+    "infoHash": "e88faa0e87944fc5ebd566e4b318b09d813c5614",
+    "sources": [],
+    "title": "Greyhound",
+    "name": "Greyhound",
+    "poster": "https://images.metahub.space/poster/small/tt6048922/img"
+  },
+  "tt12042730": {
+    "infoHash": "6aa3c04efe88dbdf827becd638babf589dc73aa2",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Project Hail Mary",
+    "name": "Project Hail Mary",
+    "poster": "https://images.metahub.space/poster/small/tt12042730/img"
   }
 }
