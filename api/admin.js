@@ -207,6 +207,9 @@ function baseStyles() {
     font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
     border-bottom: 1px solid var(--panel-border); white-space: nowrap;
   }
+  .results-table th.sortable { cursor: pointer; user-select: none; }
+  .results-table th.sortable:hover { color: var(--text); }
+  .results-table th.sortable .sort-arrow { color: var(--accent); font-size: 0.65rem; }
   .results-table td { padding: 10px 12px; border-bottom: 1px solid var(--panel-border); vertical-align: top; }
   .results-table tbody tr { cursor: pointer; }
   .results-table tbody tr:hover { background: #201c30; }
@@ -530,10 +533,17 @@ function renderAddPage({ message, editId, values }) {
             <div class="table-wrap">
               <table class="results-table">
                 <thead>
-                  <tr><th></th><th>Título</th><th>Tipo</th><th>Indexer</th><th>Tamaño</th><th>Seeders</th><th></th></tr>
+                  <tr>
+                    <th></th><th>Título</th>
+                    <th class="sortable" data-sort="year">Año <span class="sort-arrow"></span></th>
+                    <th>Tipo</th><th>Indexer</th>
+                    <th class="sortable" data-sort="size">Tamaño <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="seeders">Seeders <span class="sort-arrow"></span></th>
+                    <th></th>
+                  </tr>
                 </thead>
                 <tbody id="prowlarr-tbody">
-                  <tr><td colspan="7" class="autocomplete-empty">Escribe un título y pulsa Buscar.</td></tr>
+                  <tr><td colspan="8" class="autocomplete-empty">Escribe un título y pulsa Buscar.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -692,7 +702,9 @@ function renderAddPage({ message, editId, values }) {
       var tbody = document.getElementById('prowlarr-tbody');
       var magnetInput = document.getElementById('magnet');
       var magnetHintEl = document.getElementById('magnet-hint');
+      var sortHeaders = document.querySelectorAll('.results-table th.sortable');
       var lastResults = [];
+      var sortState = { key: null, dir: -1 };
 
       function escapeHtmlClient(str) {
         var div = document.createElement('div');
@@ -706,19 +718,61 @@ function renderAddPage({ message, editId, values }) {
         return gb >= 1 ? gb.toFixed(2) + ' GB' : (bytes / (1024 * 1024)).toFixed(0) + ' MB';
       }
 
+      function sortedResults() {
+        if (!sortState.key) return lastResults;
+        var key = sortState.key;
+        var dir = sortState.dir;
+        return lastResults.slice().sort(function (a, b) {
+          var av = a[key];
+          var bv = b[key];
+          if (av == null && bv == null) return 0;
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          return (av - bv) * dir;
+        });
+      }
+
+      function updateSortArrows() {
+        sortHeaders.forEach(function (th) {
+          var arrow = th.querySelector('.sort-arrow');
+          if (th.dataset.sort === sortState.key) {
+            arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
+          } else {
+            arrow.textContent = '';
+          }
+        });
+      }
+
+      sortHeaders.forEach(function (th) {
+        th.addEventListener('click', function () {
+          var key = th.dataset.sort;
+          if (sortState.key === key) {
+            sortState.dir = -sortState.dir;
+          } else {
+            sortState.key = key;
+            sortState.dir = -1;
+          }
+          updateSortArrows();
+          renderResults();
+        });
+      });
+
       function renderResults() {
-        var results = lastResults;
+        var results = sortedResults();
         if (results.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">Sin resultados.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">Sin resultados.</td></tr>';
           return;
         }
-        tbody.innerHTML = results.map(function (r, i) {
+        tbody.innerHTML = results.map(function (r) {
+          var i = lastResults.indexOf(r);
           var thumb = r.poster
-            ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy">'
+            ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">' +
+              '<div class="result-poster result-poster-placeholder" style="display:none"><span>No<br>Data</span></div>'
             : '<div class="result-poster result-poster-placeholder"><span>No<br>Data</span></div>';
           return '<tr class="prowlarr-row" data-idx="' + i + '">' +
             '<td>' + thumb + '</td>' +
             '<td class="title-cell">' + escapeHtmlClient(r.title) + (r.isSpainSpanish ? ' 🇪🇸' : '') + '</td>' +
+            '<td>' + escapeHtmlClient(r.year || '—') + '</td>' +
             '<td>' + escapeHtmlClient(r.contentType || '—') + '</td>' +
             '<td>' + escapeHtmlClient(r.indexer || '') + '</td>' +
             '<td>' + formatSize(r.size) + '</td>' +
@@ -737,7 +791,7 @@ function renderAddPage({ message, editId, values }) {
 
         tbody.querySelectorAll('.prowlarr-row').forEach(function (row) {
           row.addEventListener('click', function () {
-            var r = results[Number(row.dataset.idx)];
+            var r = lastResults[Number(row.dataset.idx)];
             if (r.magnet) {
               selectResult(row, r, r.magnet);
               return;
@@ -776,7 +830,7 @@ function renderAddPage({ message, editId, values }) {
       function runSearch() {
         var q = queryInput.value.trim();
         if (!q) return;
-        tbody.innerHTML = '<tr><td colspan="7"><div class="loading-row"><span class="spinner"></span> Buscando...</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8"><div class="loading-row"><span class="spinner"></span> Buscando...</div></td></tr>';
         fetch('/api/prowlarr-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -785,14 +839,14 @@ function renderAddPage({ message, editId, values }) {
           .then(function (res) { return res.json(); })
           .then(function (data) {
             if (data.error) {
-              tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</td></tr>';
+              tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</td></tr>';
               return;
             }
             lastResults = data.results || [];
             renderResults();
           })
           .catch(function () {
-            tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">No se pudo buscar ahora mismo.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">No se pudo buscar ahora mismo.</td></tr>';
           });
       }
 
