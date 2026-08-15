@@ -22,5 +22,12 @@
     "title": "Los Simpsons la pelicula",
     "name": "The Simpsons Movie",
     "poster": "https://images.metahub.space/poster/small/tt0462538/img"
+  },
+  "tt9999997": {
+    "infoHash": "4d5f74f5babcd7bf62b75acd8182370ca495dfa5",
+    "sources": [],
+    "title": "Prueba clave nueva",
+    "name": "Prueba clave nueva",
+    "poster": null
   }
 }
