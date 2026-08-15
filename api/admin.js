@@ -823,8 +823,7 @@ module.exports = async (req, res) => {
                 },
             }));
         }
-        const message = req.query.ok === "1" && req.query.msg ? decodeURIComponent(req.query.msg) : null;
-        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, message }));
+        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS }));
     }
 
     if (req.method !== "POST") {
@@ -966,7 +965,10 @@ module.exports = async (req, res) => {
         }
 
         const successMsg = `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
-        return res.redirect(302, `/admin?ok=1&msg=${encodeURIComponent(successMsg)}`);
+        // Se renderiza aquí mismo con "current" (recién escrito) en vez de
+        // redirigir a /admin, que usaría IMDB_STREAMS del último build —
+        // desactualizado hasta que termine el redeploy de Vercel.
+        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg }));
     } catch (err) {
         return addPageError(500, `<div class="msg err">${escapeHtml(err.message)}</div>`);
     }
