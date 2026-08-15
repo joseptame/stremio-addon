@@ -55,6 +55,7 @@ function renderPage({ message, imdbStreams }) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/icon.png">
 <title>Admin · JFuster RD</title>
 <style>
   :root {
@@ -116,6 +117,37 @@ function renderPage({ message, imdbStreams }) {
   input:focus { outline: none; border-color: var(--accent); }
   input::placeholder { color: #5c5875; }
   .hint-field { color: var(--text-dim); font-size: 0.78rem; margin-top: 4px; }
+  .autocomplete-wrap { position: relative; }
+  .autocomplete-results {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: #100e1a;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 50;
+  }
+  .autocomplete-results.open { display: block; }
+  .autocomplete-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .autocomplete-item:hover, .autocomplete-item.active { background: #201c30; }
+  .autocomplete-item .poster {
+    width: 32px; height: 46px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: #100e1a;
+  }
+  .autocomplete-item .ac-info { min-width: 0; }
+  .autocomplete-item .ac-name { font-size: 0.88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .autocomplete-item .ac-year { font-size: 0.75rem; color: var(--text-dim); }
+  .autocomplete-empty { padding: 10px; font-size: 0.85rem; color: var(--text-dim); }
   .checkbox-label {
     display: flex; align-items: center; gap: 8px; font-weight: 400;
     margin-top: 8px; font-size: 0.9rem; cursor: pointer;
@@ -226,8 +258,12 @@ function renderPage({ message, imdbStreams }) {
           <h2 id="form-title">Añadir película</h2>
           <p class="desc">Solo contenido de dominio público o propio.</p>
           <form method="POST" action="/admin" id="main-form">
-            <label for="imdbId">ID de IMDb (ej. tt0063350)</label>
-            <input id="imdbId" name="imdbId" required pattern="tt[0-9]+" placeholder="tt0063350">
+            <label for="imdbId">Película (busca por nombre o pega el ID de IMDb)</label>
+            <div class="autocomplete-wrap">
+              <input id="imdbId" name="imdbId" required pattern="tt[0-9]+" placeholder="Ej. Inception, o tt0063350" autocomplete="off">
+              <div class="autocomplete-results" id="imdb-results"></div>
+            </div>
+            <div class="hint-field" id="imdb-hint">Escribe el nombre, elige una opción de la lista y se rellena el ID automáticamente.</div>
 
             <label for="magnet">Magnet link</label>
             <input id="magnet" name="magnet" required placeholder="magnet:?xt=urn:btih:...">
@@ -333,6 +369,82 @@ function renderPage({ message, imdbStreams }) {
       });
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+      });
+    })();
+
+    // ── Buscador de películas por nombre (Cinemeta) ───────────
+    (function () {
+      var input = document.getElementById('imdbId');
+      var titleInput = document.getElementById('title');
+      var resultsEl = document.getElementById('imdb-results');
+      var debounceTimer = null;
+      var currentRequestId = 0;
+
+      function escapeHtmlClient(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      function closeResults() {
+        resultsEl.classList.remove('open');
+        resultsEl.innerHTML = '';
+      }
+
+      function renderResults(metas) {
+        if (!metas.length) {
+          resultsEl.innerHTML = '<div class="autocomplete-empty">Sin resultados.</div>';
+          resultsEl.classList.add('open');
+          return;
+        }
+        resultsEl.innerHTML = metas.map(function (m) {
+          var poster = m.poster
+            ? '<img class="poster" src="' + escapeHtmlClient(m.poster) + '" alt="" loading="lazy">'
+            : '<div class="poster" style="display:flex;align-items:center;justify-content:center;">🎬</div>';
+          var year = m.releaseInfo ? escapeHtmlClient(String(m.releaseInfo)) : '';
+          return '<div class="autocomplete-item" data-id="' + escapeHtmlClient(m.id) + '" data-name="' + escapeHtmlClient(m.name) + '">' +
+            poster +
+            '<div class="ac-info"><div class="ac-name">' + escapeHtmlClient(m.name) + '</div><div class="ac-year">' + year + '</div></div>' +
+            '</div>';
+        }).join('');
+        resultsEl.classList.add('open');
+
+        resultsEl.querySelectorAll('.autocomplete-item').forEach(function (item) {
+          item.addEventListener('click', function () {
+            input.value = item.dataset.id;
+            if (!titleInput.value) titleInput.value = item.dataset.name;
+            closeResults();
+          });
+        });
+      }
+
+      input.addEventListener('input', function () {
+        var q = input.value.trim();
+        clearTimeout(debounceTimer);
+
+        if (/^tt[0-9]+$/i.test(q) || q.length < 2) {
+          closeResults();
+          return;
+        }
+
+        debounceTimer = setTimeout(function () {
+          var requestId = ++currentRequestId;
+          fetch('https://v3-cinemeta.strem.io/catalog/movie/top/search=' + encodeURIComponent(q) + '.json')
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+              if (requestId !== currentRequestId) return; // respuesta obsoleta
+              renderResults((data && data.metas) || []);
+            })
+            .catch(function () {
+              if (requestId !== currentRequestId) return;
+              resultsEl.innerHTML = '<div class="autocomplete-empty">No se pudo buscar ahora mismo.</div>';
+              resultsEl.classList.add('open');
+            });
+        }, 350);
+      });
+
+      document.addEventListener('click', function (e) {
+        if (!e.target.closest('.autocomplete-wrap')) closeResults();
       });
     })();
 
