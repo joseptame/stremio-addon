@@ -6,12 +6,5 @@
       "tracker:udp://open.tracker.cl:1337/announce"
     ],
     "title": "Night of the Living Dead (1968) - Archive.org"
-  },
-  "tt9999999": {
-    "infoHash": "4d5f74f5babcd7bf62b75acd8182370ca495dfa5",
-    "sources": [
-      "tracker:udp://tracker.opentrackr.org:1337/announce"
-    ],
-    "title": "Prueba admin panel"
   }
 }
