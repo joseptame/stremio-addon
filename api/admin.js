@@ -555,8 +555,8 @@ function renderAddPage({ message, editId, values }) {
                     <th></th><th>Título</th>
                     <th class="sortable" data-sort="size">Tamaño <span class="sort-arrow"></span></th>
                     <th class="sortable" data-sort="year">Año <span class="sort-arrow"></span></th>
-                    <th>Tipo</th><th>Indexer</th>
                     <th class="sortable" data-sort="seeders">Seeders <span class="sort-arrow"></span></th>
+                    <th>Tipo</th><th>Indexer</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -797,9 +797,9 @@ function renderAddPage({ message, editId, values }) {
             '<td class="title-cell">' + escapeHtmlClient(r.title) + (r.isSpainSpanish ? ' 🇪🇸' : '') + '</td>' +
             '<td>' + formatSize(r.size) + '</td>' +
             '<td>' + escapeHtmlClient(r.year || '—') + '</td>' +
+            '<td>' + (r.seeders != null ? r.seeders : '—') + '</td>' +
             '<td>' + escapeHtmlClient(r.contentType || '—') + '</td>' +
             '<td>' + escapeHtmlClient(r.indexer || '') + '</td>' +
-            '<td>' + (r.seeders != null ? r.seeders : '—') + '</td>' +
             '<td class="go">Elegir →</td>' +
             '</tr>';
         }).join('');
