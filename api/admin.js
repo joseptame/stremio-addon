@@ -137,9 +137,7 @@ function baseStyles() {
   .info .name { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .info .sub { color: var(--text-dim); font-size: 0.75rem; }
   .info .mono { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tracker-badge { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
-  .tracker-badge.ok { color: var(--ok-text); }
-  .tracker-badge.warn { color: var(--err-text); }
+  .tracker-badge { font-size: 0.72rem; font-weight: 600; white-space: nowrap; color: var(--text-dim); }
   .actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 90px; }
   .btn-edit { background: #2c2840; color: var(--text); }
   .btn-edit:hover { background: #383253; }
@@ -260,8 +258,8 @@ function renderMovieList(imdbStreams) {
             : `<div class="poster poster-placeholder">🎬</div>`;
         const hasTrackers = Array.isArray(s.sources) && s.sources.length > 0;
         const trackerBadge = hasTrackers
-            ? `<span class="tracker-badge ok" title="El magnet incluye trackers propios">✓ con trackers</span>`
-            : `<span class="tracker-badge warn" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">⚠ sin trackers</span>`;
+            ? `<span class="tracker-badge" title="El magnet incluye trackers propios">torrent</span>`
+            : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
         return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
             ${poster}
             <div class="info">
