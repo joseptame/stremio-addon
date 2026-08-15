@@ -18,12 +18,13 @@ function renderMovieList(imdbStreams) {
     if (entries.length === 0) {
         return `<p class="empty">Todavía no hay ninguna película añadida.</p>`;
     }
-    return `<ul class="movie-list">${entries.map(([imdbId, s]) => {
+    return `<ul class="movie-list" id="movie-list">${entries.map(([imdbId, s]) => {
         const name = escapeHtml(s.name || s.title || imdbId);
+        const searchKey = `${s.name || ""} ${s.title || ""} ${imdbId}`.toLowerCase();
         const poster = s.poster
             ? `<img class="poster" src="${escapeHtml(s.poster)}" alt="" loading="lazy">`
             : `<div class="poster poster-placeholder">🎬</div>`;
-        return `<li class="movie-item">
+        return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
             ${poster}
             <div class="info">
                 <div class="name">${name}</div>
@@ -42,7 +43,9 @@ function renderMovieList(imdbStreams) {
                 </form>
             </div>
         </li>`;
-    }).join("")}</ul>`;
+    }).join("")}</ul>
+    <p class="empty" id="no-results" style="display:none">No hay ninguna película que coincida con la búsqueda.</p>
+    <div class="pagination" id="pagination"></div>`;
 }
 
 function renderPage({ message, imdbStreams }) {
@@ -76,7 +79,14 @@ function renderPage({ message, imdbStreams }) {
     margin: 0;
     padding: 32px 16px 64px;
   }
-  .wrap { max-width: 640px; margin: 0 auto; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
+  .layout { display: flex; gap: 20px; align-items: flex-start; }
+  .col-form { flex: 0 0 25%; min-width: 280px; position: sticky; top: 20px; }
+  .col-list { flex: 1; min-width: 0; }
+  @media (max-width: 800px) {
+    .layout { flex-direction: column; }
+    .col-form { position: static; width: 100%; flex-basis: auto; }
+  }
   header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
   header img { width: 40px; height: 40px; border-radius: 8px; }
   header h1 { font-size: 1.3rem; margin: 0; }
@@ -154,6 +164,17 @@ function renderPage({ message, imdbStreams }) {
   .btn-delete { background: var(--danger); color: white; width: 100%; }
   .btn-delete:hover { background: var(--danger-hover); }
   .empty { color: var(--text-dim); font-size: 0.9rem; }
+  .search-wrap { position: relative; margin-bottom: 16px; }
+  .search-wrap input { padding-left: 36px; margin-top: 0; }
+  .search-wrap svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); opacity: 0.5; }
+  .pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
+  .pagination button {
+    background: #2c2840; color: var(--text); border: none; border-radius: 8px;
+    width: 34px; height: 34px; cursor: pointer; font-size: 1rem;
+  }
+  .pagination button:hover:not(:disabled) { background: #383253; }
+  .pagination button:disabled { opacity: 0.35; cursor: default; }
+  .pagination span { color: var(--text-dim); font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -168,33 +189,46 @@ function renderPage({ message, imdbStreams }) {
 
     ${message || ""}
 
-    <section class="card">
-      <h2 id="form-title">Añadir película</h2>
-      <p class="desc">Solo contenido de dominio público o propio.</p>
-      <form method="POST" action="/admin" id="main-form">
-        <label for="imdbId">ID de IMDb (ej. tt0063350)</label>
-        <input id="imdbId" name="imdbId" required pattern="tt[0-9]+" placeholder="tt0063350">
+    <div class="layout">
+      <div class="col-form">
+        <section class="card">
+          <h2 id="form-title">Añadir película</h2>
+          <p class="desc">Solo contenido de dominio público o propio.</p>
+          <form method="POST" action="/admin" id="main-form">
+            <label for="imdbId">ID de IMDb (ej. tt0063350)</label>
+            <input id="imdbId" name="imdbId" required pattern="tt[0-9]+" placeholder="tt0063350">
 
-        <label for="magnet">Magnet link</label>
-        <input id="magnet" name="magnet" required placeholder="magnet:?xt=urn:btih:...">
-        <div class="hint-field" id="magnet-hint">Se extraen el infoHash y los trackers automáticamente.</div>
+            <label for="magnet">Magnet link</label>
+            <input id="magnet" name="magnet" required placeholder="magnet:?xt=urn:btih:...">
+            <div class="hint-field" id="magnet-hint">Se extraen el infoHash y los trackers automáticamente.</div>
 
-        <label for="title">Título (se muestra en el stream)</label>
-        <input id="title" name="title" required placeholder="Nombre de la película (fuente)">
+            <label for="title">Título (se muestra en el stream)</label>
+            <input id="title" name="title" required placeholder="Nombre de la película (fuente)">
 
-        <label for="secret">Contraseña de admin</label>
-        <input id="secret" name="secret" type="password" required autocomplete="off">
+            <label for="secret">Contraseña de admin</label>
+            <input id="secret" name="secret" type="password" required autocomplete="off">
 
-        <button type="submit" class="btn btn-primary">Guardar y desplegar</button>
-        <button type="button" id="cancel-edit" class="btn" style="display:none">Cancelar edición</button>
-      </form>
-      <p class="footer-hint">Al guardar se hace un commit al repo y Vercel redespliega automáticamente (~1 min).</p>
-    </section>
+            <button type="submit" class="btn btn-primary">Guardar y desplegar</button>
+            <button type="button" id="cancel-edit" class="btn" style="display:none">Cancelar edición</button>
+          </form>
+          <p class="footer-hint">Al guardar se hace un commit al repo y Vercel redespliega automáticamente (~1 min).</p>
+        </section>
+      </div>
 
-    <section class="card">
-      <h2>Películas (${Object.keys(imdbStreams).length})</h2>
-      ${renderMovieList(imdbStreams)}
-    </section>
+      <div class="col-list">
+        <section class="card">
+          <h2>Películas (<span id="movie-count">${Object.keys(imdbStreams).length}</span>)</h2>
+          <div class="search-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input id="search" placeholder="Buscar por título o id de IMDb..." autocomplete="off">
+          </div>
+          ${renderMovieList(imdbStreams)}
+        </section>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -228,7 +262,7 @@ function renderPage({ message, imdbStreams }) {
         document.getElementById('magnet-hint').textContent = 'Editando ' + btn.dataset.id + ': deja este campo vacío para conservar el stream actual, o pega un magnet nuevo para sustituirlo.';
         document.getElementById('form-title').textContent = 'Editar película';
         document.getElementById('cancel-edit').style.display = 'block';
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        document.querySelector('.col-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
         document.getElementById('imdbId').focus();
       });
     });
@@ -240,6 +274,72 @@ function renderPage({ message, imdbStreams }) {
       document.getElementById('form-title').textContent = 'Añadir película';
       this.style.display = 'none';
     });
+
+    // ── Buscador + paginación (client-side) ──────────────────
+    (function () {
+      var PAGE_SIZE = 8;
+      var currentPage = 1;
+      var allItems = Array.prototype.slice.call(document.querySelectorAll('#movie-list .movie-item'));
+      var searchInput = document.getElementById('search');
+      var noResults = document.getElementById('no-results');
+      var paginationEl = document.getElementById('pagination');
+      var countEl = document.getElementById('movie-count');
+
+      if (allItems.length === 0) return;
+
+      function getFiltered() {
+        var q = (searchInput.value || '').trim().toLowerCase();
+        if (!q) return allItems;
+        return allItems.filter(function (item) {
+          return item.dataset.search.indexOf(q) !== -1;
+        });
+      }
+
+      function render() {
+        var filtered = getFiltered();
+        var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+        if (currentPage > totalPages) currentPage = totalPages;
+
+        allItems.forEach(function (item) { item.style.display = 'none'; });
+
+        var start = (currentPage - 1) * PAGE_SIZE;
+        filtered.slice(start, start + PAGE_SIZE).forEach(function (item) {
+          item.style.display = 'flex';
+        });
+
+        noResults.style.display = filtered.length === 0 ? 'block' : 'none';
+        countEl.textContent = filtered.length;
+
+        paginationEl.innerHTML = '';
+        if (totalPages > 1) {
+          var prev = document.createElement('button');
+          prev.type = 'button';
+          prev.textContent = '‹';
+          prev.disabled = currentPage === 1;
+          prev.addEventListener('click', function () { currentPage--; render(); });
+
+          var label = document.createElement('span');
+          label.textContent = 'Página ' + currentPage + ' / ' + totalPages;
+
+          var next = document.createElement('button');
+          next.type = 'button';
+          next.textContent = '›';
+          next.disabled = currentPage === totalPages;
+          next.addEventListener('click', function () { currentPage++; render(); });
+
+          paginationEl.appendChild(prev);
+          paginationEl.appendChild(label);
+          paginationEl.appendChild(next);
+        }
+      }
+
+      searchInput.addEventListener('input', function () {
+        currentPage = 1;
+        render();
+      });
+
+      render();
+    })();
   </script>
 </body>
 </html>`;
