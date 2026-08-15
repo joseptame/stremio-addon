@@ -726,14 +726,49 @@ function renderAddPage({ message, editId, values }) {
             '<td class="go">Elegir →</td>' +
             '</tr>';
         }).join('');
+
+        function selectResult(row, r, magnet) {
+          magnetInput.value = magnet;
+          magnetHintEl.textContent = 'Seleccionado: ' + r.title;
+          magnetHintEl.style.color = '';
+          tbody.querySelectorAll('.prowlarr-row').forEach(function (el) { el.classList.remove('selected'); });
+          row.classList.add('selected');
+        }
+
         tbody.querySelectorAll('.prowlarr-row').forEach(function (row) {
           row.addEventListener('click', function () {
             var r = results[Number(row.dataset.idx)];
-            magnetInput.value = r.magnet;
-            magnetHintEl.textContent = 'Seleccionado: ' + r.title;
-            magnetHintEl.style.color = '';
-            tbody.querySelectorAll('.prowlarr-row').forEach(function (el) { el.classList.remove('selected'); });
-            row.classList.add('selected');
+            if (r.magnet) {
+              selectResult(row, r, r.magnet);
+              return;
+            }
+            // Sin magnet directo: hay que descargar el .torrent y calcular
+            // el hash, solo para este resultado (no se hizo al buscar).
+            var goCell = row.querySelector('.go');
+            var originalGo = goCell.textContent;
+            goCell.innerHTML = '<span class="spinner"></span>';
+            fetch('/api/prowlarr-resolve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ downloadRef: r.downloadRef }),
+            })
+              .then(function (res) { return res.json(); })
+              .then(function (data) {
+                if (data.error) {
+                  goCell.textContent = originalGo;
+                  magnetHintEl.textContent = data.error;
+                  magnetHintEl.style.color = 'var(--err-text)';
+                  return;
+                }
+                r.magnet = data.magnet;
+                goCell.textContent = originalGo;
+                selectResult(row, r, data.magnet);
+              })
+              .catch(function () {
+                goCell.textContent = originalGo;
+                magnetHintEl.textContent = 'No se pudo resolver el magnet de este resultado.';
+                magnetHintEl.style.color = 'var(--err-text)';
+              });
           });
         });
       }
