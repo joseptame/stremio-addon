@@ -1,5 +1,6 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
+const { triggerRealDebridCache } = require("../lib/realdebrid");
 const { IMDB_STREAMS } = require("../lib/data");
 
 const OWNER = "joseptame";
@@ -230,6 +231,10 @@ function renderPage({ message, imdbStreams }) {
             <label for="title">Título (se muestra en el stream)</label>
             <input id="title" name="title" required placeholder="Nombre de la película (fuente)">
 
+            <label for="rdKey">Tu clave de Real-Debrid (opcional)</label>
+            <input id="rdKey" name="rdKey" type="password" autocomplete="off" placeholder="Para empezar a cachearlo ya en RD">
+            <div class="hint-field">Si la pones, se le pide a RD que empiece a descargarlo en tu cuenta al guardar, en vez de esperar a que alguien le dé a reproducir.</div>
+
             <label for="secret">Contraseña de admin</label>
             <input id="secret" name="secret" type="password" required autocomplete="off">
 
@@ -453,7 +458,7 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, secret, action } = req.body || {};
+    const { imdbId, magnet, title, secret, action, rdKey } = req.body || {};
 
     if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
         return res.status(401).send(renderPage({
@@ -563,9 +568,21 @@ module.exports = async (req, res) => {
             ? " Póster y nombre obtenidos de Cinemeta."
             : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
 
+        let rdNote = "";
+        if (rdKey && rdKey.trim()) {
+            const rdResult = await triggerRealDebridCache(rdKey.trim(), parsed.infoHash, parsed.sources);
+            if (!rdResult) {
+                rdNote = " No se pudo contactar con Real-Debrid con esa clave (revísala).";
+            } else if (rdResult.cached) {
+                rdNote = " Ya está cacheado en Real-Debrid, listo para reproducir al instante.";
+            } else {
+                rdNote = " Se ha pedido a Real-Debrid que lo descargue en tu cuenta (puede tardar según los seeders).";
+            }
+        }
+
         return res.status(200).send(renderPage({
             imdbStreams: current,
-            message: `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${posterNote} Vercel está redesplegando, estará online en ~1 min.</div>`,
+            message: `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`,
         }));
     } catch (err) {
         return res.status(500).send(renderPage({
