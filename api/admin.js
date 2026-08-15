@@ -282,6 +282,12 @@ function renderListPage({ message, imdbStreams }) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="theme-color" content="#7b5bf0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FilmRD">
 <title>Admin · JFuster RD</title>
 <style>${baseStyles()}</style>
 </head>
@@ -457,6 +463,12 @@ function renderAddPage({ message, editId, values }) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="theme-color" content="#7b5bf0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FilmRD">
 <title>${editing ? "Editar" : "Añadir"} película · JFuster RD</title>
 <style>${baseStyles()}</style>
 </head>

@@ -1,0 +1,12 @@
+{
+  "name": "FilmRD",
+  "short_name": "FilmRD",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#14121f",
+  "theme_color": "#7b5bf0",
+  "icons": [
+    { "src": "/icon.png", "sizes": "310x310", "type": "image/png", "purpose": "any" }
+  ]
+}
