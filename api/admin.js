@@ -51,7 +51,7 @@ function renderPage({ message, imdbStreams }) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Admin · Biblioteca de jfuster</title>
+<title>Admin · JFuster RD</title>
 <style>
   :root {
     --bg: #14121f;
@@ -161,7 +161,7 @@ function renderPage({ message, imdbStreams }) {
     <header>
       <img src="/icon.png" alt="">
       <div>
-        <h1>Biblioteca de jfuster</h1>
+        <h1>JFuster RD</h1>
         <p>Panel de administración</p>
       </div>
     </header>
