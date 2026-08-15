@@ -534,8 +534,28 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
         indicator.classList.toggle('visible', show);
       }
 
+      function reset() {
+        pulling = false;
+        currentPull = 0;
+        setVisible(false);
+        content.style.transition = 'transform 0.25s ease';
+        content.style.transform = '';
+      }
+
+      // Recargar la página no siempre restaura el scroll exactamente a 0
+      // (según navegador), así que la comprobación es "casi arriba" en
+      // vez de un 0 exacto — si no, el gesto deja de activarse tras la
+      // primera recarga.
+      function atTop() {
+        return window.scrollY <= 2;
+      }
+
       document.addEventListener('touchstart', function (e) {
-        if (window.scrollY === 0) {
+        // Por si el gesto anterior se quedó a medias (p. ej. un
+        // touchcancel que el navegador no siempre dispara con claridad),
+        // se arranca siempre desde un estado limpio.
+        reset();
+        if (atTop()) {
           startY = e.touches[0].clientY;
           pulling = true;
           content.style.transition = 'none';
@@ -545,11 +565,8 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
       document.addEventListener('touchmove', function (e) {
         if (!pulling) return;
         var diff = e.touches[0].clientY - startY;
-        if (diff <= 0 || window.scrollY > 0) {
-          pulling = false;
-          setVisible(false);
-          content.style.transition = 'transform 0.25s ease';
-          content.style.transform = '';
+        if (diff <= 0 || !atTop()) {
+          reset();
           return;
         }
         currentPull = Math.min(diff, maxPull);
@@ -558,11 +575,12 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
         icon.style.transform = 'rotate(' + (currentPull * 2) + 'deg)';
       }, { passive: true });
 
-      document.addEventListener('touchend', function () {
+      function onTouchEnd() {
         if (!pulling) return;
+        var pulledEnough = currentPull >= threshold;
         pulling = false;
         content.style.transition = 'transform 0.25s ease';
-        if (currentPull >= threshold) {
+        if (pulledEnough) {
           indicator.classList.add('spinning');
           icon.style.transform = '';
           location.reload();
@@ -571,7 +589,10 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
           content.style.transform = '';
         }
         currentPull = 0;
-      });
+      }
+
+      document.addEventListener('touchend', onTouchEnd);
+      document.addEventListener('touchcancel', onTouchEnd);
     })();
   </script>
 </body>
