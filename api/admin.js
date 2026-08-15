@@ -116,6 +116,11 @@ function renderPage({ message, imdbStreams }) {
   input:focus { outline: none; border-color: var(--accent); }
   input::placeholder { color: #5c5875; }
   .hint-field { color: var(--text-dim); font-size: 0.78rem; margin-top: 4px; }
+  .checkbox-label {
+    display: flex; align-items: center; gap: 8px; font-weight: 400;
+    margin-top: 8px; font-size: 0.9rem; cursor: pointer;
+  }
+  .checkbox-label input { width: auto; margin-top: 0; }
   .btn {
     padding: 10px 16px;
     font-size: 0.9rem;
@@ -231,9 +236,10 @@ function renderPage({ message, imdbStreams }) {
             <label for="title">Título (se muestra en el stream)</label>
             <input id="title" name="title" required placeholder="Nombre de la película (fuente)">
 
-            <label for="rdKey">Tu clave de Real-Debrid (opcional)</label>
-            <input id="rdKey" name="rdKey" type="password" autocomplete="off" placeholder="Para empezar a cachearlo ya en RD">
-            <div class="hint-field">Si la pones, se le pide a RD que empiece a descargarlo en tu cuenta al guardar, en vez de esperar a que alguien le dé a reproducir.</div>
+            <label>Cachear en Real-Debrid al guardar</label>
+            <label class="checkbox-label"><input type="checkbox" name="rdCacheJfuster" value="1"> RD de Jfuster</label>
+            <label class="checkbox-label"><input type="checkbox" name="rdCacheIvan" value="1"> RD de Ivan</label>
+            <div class="hint-field">Marca las cuentas donde quieras que RD empiece a descargarla ya, en vez de esperar a que alguien le dé a reproducir.</div>
 
             <label for="secret">Contraseña de admin</label>
             <input id="secret" name="secret" type="password" required autocomplete="off">
@@ -458,7 +464,7 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, secret, action, rdKey } = req.body || {};
+    const { imdbId, magnet, title, secret, action, rdCacheJfuster, rdCacheIvan } = req.body || {};
 
     if (!process.env.ADMIN_SECRET || secret !== process.env.ADMIN_SECRET) {
         return res.status(401).send(renderPage({
@@ -568,16 +574,21 @@ module.exports = async (req, res) => {
             ? " Póster y nombre obtenidos de Cinemeta."
             : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
 
+        const rdAccounts = [];
+        if (rdCacheJfuster) rdAccounts.push({ label: "Jfuster", key: process.env.RD_KEY_JFUSTER });
+        if (rdCacheIvan) rdAccounts.push({ label: "Ivan", key: process.env.RD_KEY_IVAN });
+
         let rdNote = "";
-        if (rdKey && rdKey.trim()) {
-            const rdResult = await triggerRealDebridCache(rdKey.trim(), parsed.infoHash, parsed.sources);
-            if (!rdResult) {
-                rdNote = " No se pudo contactar con Real-Debrid con esa clave (revísala).";
-            } else if (rdResult.cached) {
-                rdNote = " Ya está cacheado en Real-Debrid, listo para reproducir al instante.";
-            } else {
-                rdNote = " Se ha pedido a Real-Debrid que lo descargue en tu cuenta (puede tardar según los seeders).";
-            }
+        if (rdAccounts.length > 0) {
+            const results = await Promise.all(rdAccounts.map(async (acc) => {
+                if (!acc.key) return `${acc.label}: falta configurar su clave en el servidor`;
+                const rdResult = await triggerRealDebridCache(acc.key, parsed.infoHash, parsed.sources);
+                if (!rdResult) return `${acc.label}: no se pudo contactar con RD`;
+                return rdResult.cached
+                    ? `${acc.label}: ya cacheado, listo al instante`
+                    : `${acc.label}: pedido a RD, puede tardar según seeders`;
+            }));
+            rdNote = " Real-Debrid — " + results.join(" · ") + ".";
         }
 
         return res.status(200).send(renderPage({
