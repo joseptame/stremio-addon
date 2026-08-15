@@ -1,6 +1,6 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
-const { triggerRealDebridCache } = require("../lib/realdebrid");
+const { triggerRealDebridCache, listTorrents, torrentsByHash } = require("../lib/realdebrid");
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
@@ -136,6 +136,7 @@ function baseStyles() {
   .info { flex: 1; min-width: 0; }
   .info .name { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .info .sub { color: var(--text-dim); font-size: 0.75rem; }
+  .info .rd-status { color: var(--accent); margin-top: 2px; }
   .info .mono { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tracker-badge { font-size: 0.72rem; font-weight: 600; white-space: nowrap; color: var(--text-dim); }
   .actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 90px; }
@@ -245,11 +246,23 @@ function baseStyles() {
 }
 
 // ── Listado ────────────────────────────────────────────────────────
-function renderMovieList(imdbStreams) {
+// "downloaded" -> "listo"; el resto de estados de RD (magnet_conversion,
+// queued, downloading...) se muestran con el % si lo hay, o el estado tal
+// cual si no (mejor un texto crudo que nada, para poder depurar).
+function formatRdEntry(entry) {
+    if (!entry) return null;
+    if (entry.status === "downloaded") return "listo";
+    if (typeof entry.progress === "number") return `${entry.progress}%`;
+    return entry.status || "?";
+}
+
+function renderMovieList(imdbStreams, rdMaps) {
     const entries = Object.entries(imdbStreams);
     if (entries.length === 0) {
         return `<p class="empty">Todavía no hay ninguna película añadida.</p>`;
     }
+    const jfusterMap = (rdMaps && rdMaps.jfuster) || {};
+    const ivanMap = (rdMaps && rdMaps.ivan) || {};
     return `<ul class="movie-list" id="movie-list">${entries.map(([imdbId, s]) => {
         const name = escapeHtml(s.name || s.title || imdbId);
         const searchKey = `${s.name || ""} ${s.title || ""} ${imdbId}`.toLowerCase();
@@ -260,12 +273,24 @@ function renderMovieList(imdbStreams) {
         const trackerBadge = hasTrackers
             ? `<span class="tracker-badge" title="El magnet incluye trackers propios">torrent</span>`
             : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
+
+        const hashKey = (s.infoHash || "").toLowerCase();
+        const rdParts = [];
+        const jfusterLabel = formatRdEntry(jfusterMap[hashKey]);
+        const ivanLabel = formatRdEntry(ivanMap[hashKey]);
+        if (jfusterLabel) rdParts.push(`Jfuster: ${jfusterLabel}`);
+        if (ivanLabel) rdParts.push(`Ivan: ${ivanLabel}`);
+        const rdLine = rdParts.length
+            ? `<div class="sub rd-status">RD — ${escapeHtml(rdParts.join(" · "))}</div>`
+            : "";
+
         return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
             ${poster}
             <div class="info">
                 <div class="name">${name}</div>
                 <div class="sub">${escapeHtml(imdbId)} · ${trackerBadge}</div>
                 <div class="sub mono">${escapeHtml(s.infoHash)}</div>
+                ${rdLine}
             </div>
             <div class="actions">
                 <a class="btn btn-edit" href="/admin/add?edit=${encodeURIComponent(imdbId)}">Editar</a>
@@ -281,7 +306,7 @@ function renderMovieList(imdbStreams) {
     <div class="pagination" id="pagination"></div>`;
 }
 
-function renderListPage({ message, imdbStreams }) {
+function renderListPage({ message, imdbStreams, rdMaps }) {
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -326,7 +351,7 @@ function renderListPage({ message, imdbStreams }) {
         </svg>
         <input id="search" placeholder="Buscar por título o id de IMDb..." autocomplete="off">
       </div>
-      ${renderMovieList(imdbStreams)}
+      ${renderMovieList(imdbStreams, rdMaps)}
     </section>
   </div>
 
@@ -926,6 +951,17 @@ async function writeImdbStreamsToGitHub(ghHeaders, apiUrl, data, sha, message) {
     }
 }
 
+// Estado de RD de las dos cuentas, para pintar el progreso en el
+// listado. Una sola llamada por cuenta (la lista completa de torrents),
+// no una por película — así da igual cuántas películas haya.
+async function fetchRdMaps() {
+    const [jfusterTorrents, ivanTorrents] = await Promise.all([
+        listTorrents(process.env.RD_KEY_JFUSTER),
+        listTorrents(process.env.RD_KEY_IVAN),
+    ]);
+    return { jfuster: torrentsByHash(jfusterTorrents), ivan: torrentsByHash(ivanTorrents) };
+}
+
 module.exports = async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     const isAddPage = req.query.view === "add";
@@ -956,7 +992,8 @@ module.exports = async (req, res) => {
                 },
             }));
         }
-        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS }));
+        const rdMaps = await fetchRdMaps();
+        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps }));
     }
 
     if (req.method !== "POST") {
@@ -1117,7 +1154,8 @@ module.exports = async (req, res) => {
         // Se renderiza aquí mismo con "current" (recién escrito) en vez de
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
-        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg }));
+        const rdMaps = await fetchRdMaps();
+        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps }));
     } catch (err) {
         return addPageError(500, `<div class="msg err">${escapeHtml(err.message)}</div>`);
     }
