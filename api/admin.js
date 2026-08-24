@@ -775,7 +775,7 @@ function renderAddPage({ message, editId, values }) {
       });
     })();
 
-    // ── Buscador de películas por nombre (Cinemeta) ───────────
+    // ── Buscador de películas por nombre (TMDB) ───────────────
     (function () {
       var input = document.getElementById('movieName');
       var imdbIdField = document.getElementById('imdbId');
@@ -821,7 +821,7 @@ function renderAddPage({ message, editId, values }) {
             ? '<img class="poster" src="' + escapeHtmlClient(m.poster) + '" alt="" loading="lazy">'
             : '<div class="poster" style="display:flex;align-items:center;justify-content:center;">🎬</div>';
           var year = m.releaseInfo ? escapeHtmlClient(String(m.releaseInfo)) : '';
-          return '<div class="autocomplete-item" data-id="' + escapeHtmlClient(m.id) + '" data-name="' + escapeHtmlClient(m.name) + '" data-poster="' + escapeHtmlClient(m.poster || '') + '">' +
+          return '<div class="autocomplete-item" data-tmdb-id="' + escapeHtmlClient(m.tmdbId) + '" data-name="' + escapeHtmlClient(m.name) + '" data-poster="' + escapeHtmlClient(m.poster || '') + '">' +
             poster +
             '<div class="ac-info"><div class="ac-name">' + escapeHtmlClient(m.name) + '</div><div class="ac-year">' + year + '</div></div>' +
             '</div>';
@@ -830,13 +830,35 @@ function renderAddPage({ message, editId, values }) {
 
         resultsEl.querySelectorAll('.autocomplete-item').forEach(function (item) {
           item.addEventListener('click', function () {
+            var hintEl = document.getElementById('imdb-hint');
             input.value = item.dataset.name;
-            imdbIdField.value = item.dataset.id;
+            imdbIdField.value = '';
             setPoster(item.dataset.poster);
-            if (!prowlarrQuery.value) prowlarrQuery.value = item.dataset.name;
-            document.getElementById('imdb-hint').textContent = 'Elige una opción de la lista: se rellena el título y el ID de IMDb automáticamente.';
-            document.getElementById('imdb-hint').style.color = '';
+            prowlarrQuery.value = item.dataset.name;
+            document.getElementById('prowlarr-search-btn').click();
             closeResults();
+            hintEl.textContent = 'Resolviendo el ID de IMDb…';
+            hintEl.style.color = '';
+            fetch('/api/movie-resolve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tmdbId: item.dataset.tmdbId }),
+            })
+              .then(function (res) { return res.json(); })
+              .then(function (data) {
+                if (data.error || !data.imdbId) {
+                  hintEl.textContent = data.error || 'No se encontró el ID de IMDb para esta película.';
+                  hintEl.style.color = 'var(--err-text)';
+                  return;
+                }
+                imdbIdField.value = data.imdbId;
+                hintEl.textContent = 'Elige una opción de la lista: se rellena el título y el ID de IMDb automáticamente.';
+                hintEl.style.color = '';
+              })
+              .catch(function () {
+                hintEl.textContent = 'No se pudo resolver el ID de IMDb.';
+                hintEl.style.color = 'var(--err-text)';
+              });
           });
         });
       }
@@ -854,11 +876,20 @@ function renderAddPage({ message, editId, values }) {
 
         debounceTimer = setTimeout(function () {
           var requestId = ++currentRequestId;
-          fetch('https://v3-cinemeta.strem.io/catalog/movie/top/search=' + encodeURIComponent(q) + '.json')
+          fetch('/api/movie-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q: q }),
+          })
             .then(function (res) { return res.json(); })
             .then(function (data) {
               if (requestId !== currentRequestId) return;
-              renderResults((data && data.metas) || []);
+              if (data.error) {
+                resultsEl.innerHTML = '<div class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</div>';
+                resultsEl.classList.add('open');
+                return;
+              }
+              renderResults(data.results || []);
             })
             .catch(function () {
               if (requestId !== currentRequestId) return;

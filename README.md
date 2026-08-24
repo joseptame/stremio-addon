@@ -256,3 +256,17 @@ El endpoint `/api/prowlarr-search` (POST, requiere `ADMIN_SECRET`) solo
 devuelve resultados de los que se puede construir un magnet link
 directamente (indexers de torrent con `infoHash` o `magnetUrl`); los
 resultados que solo ofrecen descarga de fichero `.torrent` se descartan.
+
+## Buscador de películas por nombre en /admin (TMDB)
+
+El campo "Nombre de la película" del formulario de alta busca en
+[TMDB](https://www.themoviedb.org/) en español (`language=es-ES`), a
+diferencia de Cinemeta (el catálogo de metadatos de Stremio), que solo
+devuelve títulos en inglés/original y no soporta idioma. Al elegir un
+resultado se resuelve aparte el ID de IMDb (TMDB no lo incluye en la
+búsqueda) vía `/api/movie-resolve`.
+
+Variable de entorno necesaria en Vercel:
+
+- `TMDB_API_KEY`: la "API Key (v3 auth)", gratuita, en
+  https://www.themoviedb.org/settings/api.

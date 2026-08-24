@@ -54,6 +54,15 @@ function renderLoginPage({ error, next }) {
     border-radius: 9px; color: var(--text);
   }
   input:focus { outline: none; border-color: var(--accent); }
+  .password-wrap { position: relative; margin-top: 12px; }
+  .password-wrap input { margin-top: 0; padding-right: 44px; }
+  .toggle-password {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    background: none; border: none; margin: 0; padding: 0; cursor: pointer; color: var(--text-dim);
+  }
+  .toggle-password:hover { color: var(--text); }
+  .toggle-password svg { width: 20px; height: 20px; }
   .checkbox-label { display: flex; align-items: center; gap: 9px; font-weight: 400; margin-top: 30px; font-size: 0.88rem; }
   .checkbox-label input { width: auto; margin-top: 0; }
   button {
@@ -77,11 +86,32 @@ function renderLoginPage({ error, next }) {
       <label for="username">Usuario</label>
       <input id="username" name="username" required autocomplete="username">
       <label for="password">Contraseña</label>
-      <input id="password" name="password" type="password" required autocomplete="current-password">
+      <div class="password-wrap">
+        <input id="password" name="password" type="password" required autocomplete="current-password">
+        <button type="button" class="toggle-password" id="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">
+          <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
       <label class="checkbox-label"><input type="checkbox" name="remember" value="1" checked> Recordarme en este dispositivo</label>
       <button type="submit">Entrar</button>
     </form>
   </div>
+  <script>
+    (function () {
+      var input = document.getElementById('password');
+      var btn = document.getElementById('toggle-password');
+      var icon = document.getElementById('eye-icon');
+      var eyeOpen = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>';
+      var eyeClosed = '<path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.6 10.6 0 0 1 12 5c7 0 11 7 11 7a13.2 13.2 0 0 1-3.4 3.9M6.5 6.6C3.6 8.4 1 12 1 12s4 7 11 7a10.4 10.4 0 0 0 4.2-.9"/>';
+      btn.addEventListener('click', function () {
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        icon.innerHTML = show ? eyeClosed : eyeOpen;
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', show ? 'Ocultar contraseña' : 'Mostrar contraseña');
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
