@@ -141,6 +141,7 @@ function baseStyles() {
   .poster-placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
   .info { flex: 1; min-width: 0; }
   .info .name { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ready-check { color: #3ddc84; text-shadow: 0 0 4px #3ddc8480; }
   .info .sub { color: var(--text-dim); font-size: 0.75rem; }
   .rd-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 0.72rem; color: var(--text-dim); }
   .rd-row .rd-name { flex-shrink: 0; width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -325,6 +326,11 @@ function renderMovieList(imdbStreams, rdMaps) {
             : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
 
         const hashKey = (s.infoHash || "").toLowerCase();
+        const rdInfos = RD_ACCOUNTS
+            .map((acc) => formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]))
+            .filter(Boolean);
+        const allReady = rdInfos.length > 0 && rdInfos.every((info) => info.pct === 100);
+        const readyCheck = allReady ? ` <span class="ready-check" title="Listo en todas las cuentas">✓</span>` : "";
         const rdRows = RD_ACCOUNTS.map((acc) => {
             const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
             if (!info) return "";
@@ -338,7 +344,7 @@ function renderMovieList(imdbStreams, rdMaps) {
         return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
             ${poster}
             <div class="info">
-                <div class="name">${name}</div>
+                <div class="name">${name}${readyCheck}</div>
                 <div class="sub">${escapeHtml(imdbId)} · ${trackerBadge}</div>
                 <div class="sub mono">${escapeHtml(s.infoHash)}</div>
                 ${rdRows}
