@@ -10,6 +10,16 @@ const REPO = "stremio-addon";
 const BRANCH = "master";
 const FILE_PATH = "lib/imdb-streams.json";
 
+// Cuentas de Real-Debrid propias sobre las que el panel puede cachear un
+// stream al guardarlo y cuyo estado de descarga se muestra en el listado.
+// "id" se usa para el nombre del checkbox (rdCache<Id>) y como clave en los
+// mapas de estado; "envVar" es la variable de entorno con la API key.
+const RD_ACCOUNTS = [
+    { id: "Jfuster", envVar: "RD_KEY_JFUSTER" },
+    { id: "Ivan", envVar: "RD_KEY_IVAN" },
+    { id: "Manolo", envVar: "RD_KEY_MANOLO" },
+];
+
 function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -44,8 +54,6 @@ function baseStyles() {
   }
   .wrap { max-width: 1200px; margin: 0 auto; }
   .wrap.narrow { max-width: 620px; }
-  .back-link { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; }
-  .back-link:hover { color: var(--text); }
   header { margin-bottom: 24px; }
   .header-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
   .header-left { display: flex; align-items: center; gap: 12px; }
@@ -123,8 +131,6 @@ function baseStyles() {
   .btn.full { width: 100%; margin-top: 20px; }
   .btn-primary { background: var(--accent); color: white; }
   .btn-primary:hover { background: var(--accent-hover); }
-  .btn-add { background: var(--accent); color: white; }
-  .btn-add:hover { background: var(--accent-hover); }
   .msg { margin-bottom: 20px; padding: 12px 14px; border-radius: 8px; font-size: 0.9rem; line-height: 1.4; }
   .ok { background: var(--ok-bg); color: var(--ok-text); }
   .err { background: var(--err-bg); color: var(--err-text); }
@@ -136,12 +142,28 @@ function baseStyles() {
   .info { flex: 1; min-width: 0; }
   .info .name { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .info .sub { color: var(--text-dim); font-size: 0.75rem; }
-  .info .rd-status { color: var(--accent); margin-top: 2px; }
+  .rd-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 0.72rem; color: var(--text-dim); }
+  .rd-row .rd-name { flex-shrink: 0; width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rd-bar { flex: 1; height: 5px; min-width: 24px; background: #100e1a; border-radius: 4px; overflow: hidden; }
+  .rd-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .rd-pct { flex-shrink: 0; width: 34px; text-align: right; }
   .info .mono { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tracker-badge { font-size: 0.72rem; font-weight: 600; white-space: nowrap; color: var(--text-dim); }
   .actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 90px; }
   .btn-edit { background: #2c2840; color: var(--text); }
   .btn-edit:hover { background: #383253; }
+  .btn-neon-red {
+    background: #1a0e14; color: #ff3b5c; border: 1px solid #ff3b5c;
+    box-shadow: 0 0 3px #ff3b5c66, 0 0 7px #ff3b5c33;
+    text-shadow: 0 0 3px #ff3b5c4d;
+  }
+  .btn-neon-red:hover { background: #240f16; box-shadow: 0 0 5px #ff3b5c99, 0 0 12px #ff3b5c4d; }
+  .btn-neon-purple {
+    background: #150f26; color: #b18bff; border: 1px solid #b18bff;
+    box-shadow: 0 0 3px #b18bff66, 0 0 7px #b18bff33;
+    text-shadow: 0 0 3px #b18bff4d;
+  }
+  .btn-neon-purple:hover { background: #1c1533; box-shadow: 0 0 5px #b18bff99, 0 0 12px #b18bff4d; }
   .delete-form { margin: 0; }
   .btn-delete { background: var(--danger); color: white; width: 100%; }
   .btn-delete:hover { background: var(--danger-hover); }
@@ -275,14 +297,15 @@ function baseStyles() {
 }
 
 // ── Listado ────────────────────────────────────────────────────────
-// "downloaded" -> "listo"; el resto de estados de RD (magnet_conversion,
+// "downloaded" -> 100%/"listo"; el resto de estados de RD (magnet_conversion,
 // queued, downloading...) se muestran con el % si lo hay, o el estado tal
-// cual si no (mejor un texto crudo que nada, para poder depurar).
+// cual si no (mejor un texto crudo que nada, para poder depurar) con la
+// barra a 0.
 function formatRdEntry(entry) {
     if (!entry) return null;
-    if (entry.status === "downloaded") return "listo";
-    if (typeof entry.progress === "number") return `${entry.progress}%`;
-    return entry.status || "?";
+    if (entry.status === "downloaded") return { pct: 100, label: "listo" };
+    if (typeof entry.progress === "number") return { pct: entry.progress, label: `${entry.progress}%` };
+    return { pct: 0, label: entry.status || "?" };
 }
 
 function renderMovieList(imdbStreams, rdMaps) {
@@ -290,8 +313,6 @@ function renderMovieList(imdbStreams, rdMaps) {
     if (entries.length === 0) {
         return `<p class="empty">Todavía no hay ninguna película añadida.</p>`;
     }
-    const jfusterMap = (rdMaps && rdMaps.jfuster) || {};
-    const ivanMap = (rdMaps && rdMaps.ivan) || {};
     return `<ul class="movie-list" id="movie-list">${entries.map(([imdbId, s]) => {
         const name = escapeHtml(s.name || s.title || imdbId);
         const searchKey = `${s.name || ""} ${s.title || ""} ${imdbId}`.toLowerCase();
@@ -304,14 +325,15 @@ function renderMovieList(imdbStreams, rdMaps) {
             : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
 
         const hashKey = (s.infoHash || "").toLowerCase();
-        const rdParts = [];
-        const jfusterLabel = formatRdEntry(jfusterMap[hashKey]);
-        const ivanLabel = formatRdEntry(ivanMap[hashKey]);
-        if (jfusterLabel) rdParts.push(`Jfuster: ${jfusterLabel}`);
-        if (ivanLabel) rdParts.push(`Ivan: ${ivanLabel}`);
-        const rdLine = rdParts.length
-            ? `<div class="sub rd-status">RD — ${escapeHtml(rdParts.join(" · "))}</div>`
-            : "";
+        const rdRows = RD_ACCOUNTS.map((acc) => {
+            const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
+            if (!info) return "";
+            return `<div class="rd-row">
+                <span class="rd-name">${escapeHtml(acc.id)}</span>
+                <div class="rd-bar"><div class="rd-bar-fill" style="width:${info.pct}%"></div></div>
+                <span class="rd-pct">${escapeHtml(info.label)}</span>
+            </div>`;
+        }).join("");
 
         return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
             ${poster}
@@ -319,7 +341,7 @@ function renderMovieList(imdbStreams, rdMaps) {
                 <div class="name">${name}</div>
                 <div class="sub">${escapeHtml(imdbId)} · ${trackerBadge}</div>
                 <div class="sub mono">${escapeHtml(s.infoHash)}</div>
-                ${rdLine}
+                ${rdRows}
             </div>
             <div class="actions">
                 <a class="btn btn-edit" href="/admin/add?edit=${encodeURIComponent(imdbId)}">Editar</a>
@@ -370,8 +392,8 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:14px;">
-          <a href="/login?logout=1" class="back-link">Cerrar sesión</a>
-          <a href="/admin/add" class="btn btn-add">+ Añadir película</a>
+          <a href="/login?logout=1" class="btn btn-neon-red">Cerrar sesión</a>
+          <a href="/admin/add" class="btn btn-neon-purple">+ Añadir película</a>
         </div>
       </div>
     </header>
@@ -403,6 +425,12 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
   </div>
 
   <script>
+    // Recarga si la página vuelve del bfcache (típico al reabrir la PWA
+    // desde el icono tras dejarla en segundo plano): sin esto, el usuario
+    // ve la versión que tenía cargada la última vez, no la actual.
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) location.reload();
+    });
     (function () {
       var overlay = document.getElementById('delete-modal-overlay');
       var textEl = document.getElementById('delete-modal-text');
@@ -604,7 +632,8 @@ function renderAddPage({ message, editId, values }) {
     const editing = !!editId;
     const v = Object.assign({
         imdbId: "", title: "", magnet: "", poster: "",
-        rdCacheJfuster: true, rdCacheIvan: true, prowlarrMode: true,
+        rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
+        prowlarrMode: true,
     }, values || {});
 
     const magnetHint = editing
@@ -630,15 +659,14 @@ function renderAddPage({ message, editId, values }) {
   <div class="wrap sheet-wrap">
     <header>
       <div class="header-row">
-        <a href="/admin" class="back-link">← Volver al listado</a>
-        <a href="/login?logout=1" class="back-link">Cerrar sesión</a>
+        <a href="/admin" class="btn btn-neon-purple">← Volver al listado</a>
+        <a href="/login?logout=1" class="btn btn-neon-red">Cerrar sesión</a>
       </div>
       <div class="header-row" style="margin-top:10px;">
         <div class="header-left">
           <img src="/icon.png" alt="">
           <div>
             <h1>${editing ? "Editar película" : "Añadir película"}</h1>
-            <p>Solo contenido de dominio público o propio.</p>
           </div>
         </div>
       </div>
@@ -679,8 +707,7 @@ function renderAddPage({ message, editId, values }) {
           </div>
 
           <label>Cachear en Real-Debrid al guardar</label>
-          <label class="checkbox-label"><input type="checkbox" name="rdCacheJfuster" value="1"${v.rdCacheJfuster ? " checked" : ""}> RD de Jfuster</label>
-          <label class="checkbox-label"><input type="checkbox" name="rdCacheIvan" value="1"${v.rdCacheIvan ? " checked" : ""}> RD de Ivan</label>
+          ${RD_ACCOUNTS.map((acc) => `<label class="checkbox-label"><input type="checkbox" name="rdCache${acc.id}" value="1"${v.rdCache[acc.id] ? " checked" : ""}> RD de ${acc.id}</label>`).join("")}
 
           <button type="submit" class="btn btn-primary full">Guardar y desplegar</button>
           <p class="footer-hint">Al guardar se hace un commit al repo y Vercel redespliega (~1 min).</p>
@@ -728,6 +755,12 @@ function renderAddPage({ message, editId, values }) {
   </div>
 
   <script>
+    // Recarga si la página vuelve del bfcache (típico al reabrir la PWA
+    // desde el icono tras dejarla en segundo plano): sin esto, el usuario
+    // ve la versión que tenía cargada la última vez, no la actual.
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) location.reload();
+    });
     (function () {
       var modeCheckbox = document.getElementById('prowlarr-mode');
       var modeField = document.getElementById('prowlarrModeField');
@@ -1105,15 +1138,16 @@ async function writeImdbStreamsToGitHub(ghHeaders, apiUrl, data, sha, message) {
     }
 }
 
-// Estado de RD de las dos cuentas, para pintar el progreso en el
-// listado. Una sola llamada por cuenta (la lista completa de torrents),
+// Estado de RD de cada cuenta de RD_ACCOUNTS, para pintar el progreso en
+// el listado. Una sola llamada por cuenta (la lista completa de torrents),
 // no una por película — así da igual cuántas películas haya.
 async function fetchRdMaps() {
-    const [jfusterTorrents, ivanTorrents] = await Promise.all([
-        listTorrents(process.env.RD_KEY_JFUSTER),
-        listTorrents(process.env.RD_KEY_IVAN),
-    ]);
-    return { jfuster: torrentsByHash(jfusterTorrents), ivan: torrentsByHash(ivanTorrents) };
+    const torrentsByAccount = await Promise.all(
+        RD_ACCOUNTS.map((acc) => listTorrents(process.env[acc.envVar]))
+    );
+    const maps = {};
+    RD_ACCOUNTS.forEach((acc, i) => { maps[acc.id] = torrentsByHash(torrentsByAccount[i]); });
+    return maps;
 }
 
 module.exports = async (req, res) => {
@@ -1140,8 +1174,7 @@ module.exports = async (req, res) => {
                     title: entry ? (entry.title || "") : "",
                     magnet: "",
                     poster: entry ? (entry.poster || "") : "",
-                    rdCacheJfuster: true,
-                    rdCacheIvan: true,
+                    rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
                     prowlarrMode: !editId,
                 },
             }));
@@ -1157,7 +1190,9 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, action, rdCacheJfuster, rdCacheIvan, prowlarrMode, downloadRef } = req.body || {};
+    const { imdbId, magnet, title, action, prowlarrMode, downloadRef } = req.body || {};
+    const rdCache = {};
+    RD_ACCOUNTS.forEach((acc) => { rdCache[acc.id] = !!(req.body || {})["rdCache" + acc.id]; });
 
     // ── Eliminar (siempre vuelve al listado) ───────────────────
     if (action === "delete") {
@@ -1203,8 +1238,7 @@ module.exports = async (req, res) => {
         imdbId: imdbId || "",
         title: title || "",
         magnet: magnet || "",
-        rdCacheJfuster: !!rdCacheJfuster,
-        rdCacheIvan: !!rdCacheIvan,
+        rdCache,
         prowlarrMode: prowlarrMode === "1",
     };
     const editId = imdbId && IMDB_STREAMS[imdbId] ? imdbId : null;
@@ -1271,9 +1305,9 @@ module.exports = async (req, res) => {
             ? " Póster y nombre obtenidos de Cinemeta."
             : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
 
-        const rdAccounts = [];
-        if (rdCacheJfuster) rdAccounts.push({ label: "Jfuster", key: process.env.RD_KEY_JFUSTER });
-        if (rdCacheIvan) rdAccounts.push({ label: "Ivan", key: process.env.RD_KEY_IVAN });
+        const rdAccounts = RD_ACCOUNTS
+            .filter((acc) => rdCache[acc.id])
+            .map((acc) => ({ label: acc.id, key: process.env[acc.envVar] }));
 
         let rdNote = "";
         if (rdAccounts.length > 0) {
