@@ -327,11 +327,6 @@ function renderMovieList(imdbStreams, rdMaps) {
             : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
 
         const hashKey = (s.infoHash || "").toLowerCase();
-        const rdInfos = RD_ACCOUNTS
-            .map((acc) => formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]))
-            .filter(Boolean);
-        const allReady = rdInfos.length > 0 && rdInfos.every((info) => info.pct === 100);
-        const readyCheck = allReady ? ` <span class="ready-check" title="Listo en todas las cuentas">✓</span>` : "";
         const rdRows = RD_ACCOUNTS.map((acc) => {
             const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
             if (!info) return "";
@@ -348,7 +343,7 @@ function renderMovieList(imdbStreams, rdMaps) {
         return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
             ${poster}
             <div class="info">
-                <div class="name">${name}${readyCheck}</div>
+                <div class="name">${name}</div>
                 <div class="sub">${escapeHtml(imdbId)} · ${trackerBadge}</div>
                 <div class="sub mono">${escapeHtml(s.infoHash)}</div>
                 ${rdRows}
