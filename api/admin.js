@@ -147,6 +147,7 @@ function baseStyles() {
   .rd-row .rd-name { flex-shrink: 0; width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rd-bar { flex: 1; height: 5px; min-width: 24px; background: #100e1a; border-radius: 4px; overflow: hidden; }
   .rd-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .rd-row .ready-check { flex: 1; }
   .rd-pct { flex-shrink: 0; width: 34px; text-align: right; }
   .info .mono { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tracker-badge { font-size: 0.72rem; font-weight: 600; white-space: nowrap; color: var(--text-dim); }
@@ -334,10 +335,13 @@ function renderMovieList(imdbStreams, rdMaps) {
         const rdRows = RD_ACCOUNTS.map((acc) => {
             const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
             if (!info) return "";
+            const body = info.pct === 100
+                ? `<span class="ready-check">✓ listo</span>`
+                : `<div class="rd-bar"><div class="rd-bar-fill" style="width:${info.pct}%"></div></div>
+                <span class="rd-pct">${escapeHtml(info.label)}</span>`;
             return `<div class="rd-row">
                 <span class="rd-name">${escapeHtml(acc.id)}</span>
-                <div class="rd-bar"><div class="rd-bar-fill" style="width:${info.pct}%"></div></div>
-                <span class="rd-pct">${escapeHtml(info.label)}</span>
+                ${body}
             </div>`;
         }).join("");
 
