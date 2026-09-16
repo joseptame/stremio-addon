@@ -59,5 +59,14 @@
     "title": "Van Helsing",
     "name": "Van Helsing",
     "poster": "https://images.metahub.space/poster/small/tt0338526/img"
+  },
+  "tt1060277": {
+    "infoHash": "3d52f2317e19fbb9d0062efe7148f9b0b72d7bbd",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Monstruoso",
+    "name": "Cloverfield",
+    "poster": "https://images.metahub.space/poster/small/tt1060277/img"
   }
 }
