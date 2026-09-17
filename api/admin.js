@@ -1169,6 +1169,7 @@ function renderTestLibsearchPage() {
         <table class="results-table">
           <thead>
             <tr>
+              <th></th>
               <th>Título</th>
               <th class="sortable" data-sort="size">Tamaño <span class="sort-arrow"></span></th>
               <th class="sortable" data-sort="year">Año <span class="sort-arrow"></span></th>
@@ -1179,7 +1180,7 @@ function renderTestLibsearchPage() {
             </tr>
           </thead>
           <tbody id="libsearch-tbody">
-            <tr><td colspan="7" class="autocomplete-empty">Elige película o serie, escribe un título y pulsa Buscar.</td></tr>
+            <tr><td colspan="8" class="autocomplete-empty">Elige película o serie, escribe un título y pulsa Buscar.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1201,6 +1202,11 @@ function renderTestLibsearchPage() {
         div.textContent = str;
         return div.innerHTML;
       }
+
+      window.handlePosterError = function (img) {
+        img.style.display = 'none';
+        if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+      };
 
       function formatSize(bytes) {
         if (!bytes) return '—';
@@ -1250,11 +1256,16 @@ function renderTestLibsearchPage() {
       function renderResults() {
         var results = sortedResults();
         if (results.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">Sin resultados en español.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">Sin resultados en español.</td></tr>';
           return;
         }
         tbody.innerHTML = results.map(function (r) {
+          var thumb = r.poster
+            ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy" onerror="handlePosterError(this)">' +
+              '<div class="result-poster result-poster-placeholder" style="display:none"><span>No<br>Data</span></div>'
+            : '<div class="result-poster result-poster-placeholder"><span>No<br>Data</span></div>';
           return '<tr>' +
+            '<td>' + thumb + '</td>' +
             '<td class="title-cell">' + escapeHtmlClient(r.title) + ' 🇪🇸</td>' +
             '<td>' + formatSize(r.size) + '</td>' +
             '<td>' + escapeHtmlClient(r.year || '—') + '</td>' +
@@ -1269,7 +1280,7 @@ function renderTestLibsearchPage() {
       function runSearch() {
         var q = queryInput.value.trim();
         if (!q) return;
-        tbody.innerHTML = '<tr><td colspan="7"><div class="loading-row"><span class="spinner"></span> Buscando...</div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8"><div class="loading-row"><span class="spinner"></span> Buscando...</div></td></tr>';
         fetch('/api/bitsearch-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1278,14 +1289,14 @@ function renderTestLibsearchPage() {
           .then(function (res) { return res.json(); })
           .then(function (data) {
             if (data.error) {
-              tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</td></tr>';
+              tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</td></tr>';
               return;
             }
             lastResults = data.results || [];
             renderResults();
           })
           .catch(function () {
-            tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">No se pudo buscar ahora mismo.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">No se pudo buscar ahora mismo.</td></tr>';
           });
       }
 
