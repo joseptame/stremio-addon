@@ -68,5 +68,14 @@
     "title": "Monstruoso",
     "name": "Cloverfield",
     "poster": "https://images.metahub.space/poster/small/tt1060277/img"
+  },
+  "tt2548396": {
+    "infoHash": "98310cdadb1f5427e1b4a7cfecd3c0a4cb4a7277",
+    "sources": [
+      "tracker:https://tracker.milnueve.cc/announce/9b6e17369ee868ce339ba67085f4a473"
+    ],
+    "title": "The Cloverfield Paradox",
+    "name": "The Cloverfield Paradox",
+    "poster": "https://images.metahub.space/poster/small/tt2548396/img"
   }
 }
