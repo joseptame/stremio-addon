@@ -398,6 +398,7 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
         </div>
         <div style="display:flex; align-items:center; gap:14px;">
           <a href="/login?logout=1" class="btn btn-neon-red">Cerrar sesión</a>
+          <a href="/admin/test-libsearch" class="btn btn-edit">Test Libsearch</a>
           <a href="/admin/add" class="btn btn-neon-purple">+ Añadir película</a>
         </div>
       </div>
@@ -1121,6 +1122,183 @@ function renderAddPage({ message, editId, values }) {
 </html>`;
 }
 
+// ── Página de prueba de la API de bitsearch.eu (solo español) ─────
+function renderTestLibsearchPage() {
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="theme-color" content="#7b5bf0">
+<title>Test Libsearch · JFuster RD</title>
+<style>${baseStyles()}</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="header-row">
+        <a href="/admin" class="btn btn-neon-purple">← Volver al listado</a>
+        <a href="/login?logout=1" class="btn btn-neon-red">Cerrar sesión</a>
+      </div>
+      <div class="header-row" style="margin-top:10px;">
+        <div class="header-left">
+          <img src="/icon.png" alt="">
+          <div>
+            <h1>Test Libsearch</h1>
+            <p>Búsqueda de prueba en bitsearch.eu — solo resultados en español (Castellano/Español/Spanish/ES)</p>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="prowlarr-search-row">
+        <div class="field">
+          <input id="libsearch-query" placeholder="Título a buscar..." autocomplete="off">
+        </div>
+        <select id="libsearch-scope">
+          <option value="movie" selected>Película</option>
+          <option value="tv">Serie</option>
+        </select>
+        <button type="button" id="libsearch-search-btn" class="btn btn-edit">Buscar</button>
+      </div>
+      <div class="table-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Título</th>
+              <th class="sortable" data-sort="size">Tamaño <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="year">Año <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="seeders">Seeders <span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="leechers">Leechers <span class="sort-arrow"></span></th>
+              <th>Verificado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="libsearch-tbody">
+            <tr><td colspan="7" class="autocomplete-empty">Elige película o serie, escribe un título y pulsa Buscar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      var queryInput = document.getElementById('libsearch-query');
+      var scopeSelect = document.getElementById('libsearch-scope');
+      var searchBtn = document.getElementById('libsearch-search-btn');
+      var tbody = document.getElementById('libsearch-tbody');
+      var sortHeaders = document.querySelectorAll('.results-table th.sortable');
+      var lastResults = [];
+      var sortState = { key: null, dir: -1 };
+
+      function escapeHtmlClient(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      function formatSize(bytes) {
+        if (!bytes) return '—';
+        var gb = bytes / (1024 * 1024 * 1024);
+        return gb >= 1 ? gb.toFixed(2) + ' GB' : (bytes / (1024 * 1024)).toFixed(0) + ' MB';
+      }
+
+      function sortedResults() {
+        if (!sortState.key) return lastResults;
+        var key = sortState.key;
+        var dir = sortState.dir;
+        return lastResults.slice().sort(function (a, b) {
+          var av = a[key];
+          var bv = b[key];
+          if (av == null && bv == null) return 0;
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          return (av - bv) * dir;
+        });
+      }
+
+      function updateSortArrows() {
+        sortHeaders.forEach(function (th) {
+          var arrow = th.querySelector('.sort-arrow');
+          if (th.dataset.sort === sortState.key) {
+            arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
+          } else {
+            arrow.textContent = '';
+          }
+        });
+      }
+
+      sortHeaders.forEach(function (th) {
+        th.addEventListener('click', function () {
+          var key = th.dataset.sort;
+          if (sortState.key === key) {
+            sortState.dir = -sortState.dir;
+          } else {
+            sortState.key = key;
+            sortState.dir = -1;
+          }
+          updateSortArrows();
+          renderResults();
+        });
+      });
+
+      function renderResults() {
+        var results = sortedResults();
+        if (results.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">Sin resultados en español.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = results.map(function (r) {
+          return '<tr>' +
+            '<td class="title-cell">' + escapeHtmlClient(r.title) + ' 🇪🇸</td>' +
+            '<td>' + formatSize(r.size) + '</td>' +
+            '<td>' + escapeHtmlClient(r.year || '—') + '</td>' +
+            '<td>' + (r.seeders != null ? r.seeders : '—') + '</td>' +
+            '<td>' + (r.leechers != null ? r.leechers : '—') + '</td>' +
+            '<td>' + (r.verified ? '✓' : '—') + '</td>' +
+            '<td><a class="go" href="' + escapeHtmlClient(r.magnet) + '">Magnet →</a></td>' +
+            '</tr>';
+        }).join('');
+      }
+
+      function runSearch() {
+        var q = queryInput.value.trim();
+        if (!q) return;
+        tbody.innerHTML = '<tr><td colspan="7"><div class="loading-row"><span class="spinner"></span> Buscando...</div></td></tr>';
+        fetch('/api/bitsearch-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: q, scope: scopeSelect.value }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.error) {
+              tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</td></tr>';
+              return;
+            }
+            lastResults = data.results || [];
+            renderResults();
+          })
+          .catch(function () {
+            tbody.innerHTML = '<tr><td colspan="7" class="autocomplete-empty">No se pudo buscar ahora mismo.</td></tr>';
+          });
+      }
+
+      searchBtn.addEventListener('click', runSearch);
+      queryInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+      });
+    })();
+  </script>
+</body>
+</html>`;
+}
+
 async function readImdbStreamsFromGitHub(ghHeaders) {
     const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE_PATH}`;
     const getRes = await fetch(`${apiUrl}?ref=${BRANCH}`, { headers: ghHeaders });
@@ -1158,17 +1336,23 @@ async function fetchRdMaps() {
 module.exports = async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     const isAddPage = req.query.view === "add";
+    const isTestLibsearchPage = req.query.view === "test-libsearch";
 
     if (!isAuthenticated(req, (process.env.ADMIN_PASSWORD || "").trim())) {
         let publicPath = "/admin";
         if (isAddPage) {
             publicPath = "/admin/add";
             if (req.query.edit) publicPath += `?edit=${encodeURIComponent(req.query.edit)}`;
+        } else if (isTestLibsearchPage) {
+            publicPath = "/admin/test-libsearch";
         }
         return res.redirect(302, `/login?next=${encodeURIComponent(publicPath)}`);
     }
 
     if (req.method === "GET") {
+        if (isTestLibsearchPage) {
+            return res.status(200).send(renderTestLibsearchPage());
+        }
         if (isAddPage) {
             const editId = req.query.edit && IMDB_STREAMS[req.query.edit] ? req.query.edit : null;
             const entry = editId ? IMDB_STREAMS[editId] : null;
