@@ -77,5 +77,14 @@
     "title": "The Cloverfield Paradox",
     "name": "The Cloverfield Paradox",
     "poster": "https://images.metahub.space/poster/small/tt2548396/img"
+  },
+  "tt1161864": {
+    "infoHash": "94bd3bf4fe921db9a8a0847b339f4b9410e365a5",
+    "sources": [
+      "tracker:https://tracker.milnueve.cc/announce/9b6e17369ee868ce339ba67085f4a473"
+    ],
+    "title": "El rito",
+    "name": "The Rite",
+    "poster": "https://images.metahub.space/poster/small/tt1161864/img"
   }
 }
