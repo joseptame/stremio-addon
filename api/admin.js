@@ -733,6 +733,10 @@ function renderAddPage({ message, editId, values }) {
                 <option value="tv">Serie</option>
                 <option value="all">Todo</option>
               </select>
+              <select id="prowlarr-indexer">
+                <option value="">Todos los indexers</option>
+                <option value="The Pirate Bay">The Pirate Bay</option>
+              </select>
               <label class="checkbox-label"><input type="checkbox" id="prowlarr-es"> Solo español de España</label>
               <button type="button" id="prowlarr-search-btn" class="btn btn-edit">Buscar</button>
             </div>
@@ -946,6 +950,7 @@ function renderAddPage({ message, editId, values }) {
     (function () {
       var queryInput = document.getElementById('prowlarr-query');
       var scopeSelect = document.getElementById('prowlarr-scope');
+      var indexerSelect = document.getElementById('prowlarr-indexer');
       var esCheckbox = document.getElementById('prowlarr-es');
       var searchBtn = document.getElementById('prowlarr-search-btn');
       var tbody = document.getElementById('prowlarr-tbody');
@@ -1094,7 +1099,7 @@ function renderAddPage({ message, editId, values }) {
         fetch('/api/prowlarr-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: q, scope: scopeSelect.value }),
+          body: JSON.stringify({ q: q, scope: scopeSelect.value, indexer: indexerSelect.value }),
         })
           .then(function (res) { return res.json(); })
           .then(function (data) {

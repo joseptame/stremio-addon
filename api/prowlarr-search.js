@@ -12,14 +12,14 @@ module.exports = async (req, res) => {
         return res.status(401).json({ error: "Sesión caducada. Vuelve a iniciar sesión en /admin." });
     }
 
-    const { q, scope } = req.body || {};
+    const { q, scope, indexer } = req.body || {};
 
     if (!q || !String(q).trim()) {
         return res.status(400).json({ error: "Falta el término de búsqueda." });
     }
 
     try {
-        const results = await searchProwlarr(String(q).trim(), scope);
+        const results = await searchProwlarr(String(q).trim(), scope, indexer);
         return res.status(200).json({ results });
     } catch (err) {
         return res.status(502).json({ error: err.message });
