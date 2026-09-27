@@ -247,9 +247,11 @@ function baseStyles() {
   .results-table tbody tr { cursor: pointer; }
   .results-table tbody tr:hover { background: #201c30; }
   .results-table tbody tr:last-child td { border-bottom: none; }
-  .results-table tbody tr.selected { background: #2a2340; }
+  .results-table tbody tr.selected { background: #2a2340; box-shadow: inset 3px 0 0 var(--accent); }
   .results-table .title-cell { max-width: 340px; }
   .results-table .go { color: var(--accent); white-space: nowrap; font-weight: 600; font-size: 0.8rem; }
+  .results-table .go.ok { color: var(--ok-text); }
+  .results-table .go.err { color: var(--err-text); font-size: 0.72rem; }
   .result-poster { width: 32px; height: 46px; object-fit: cover; border-radius: 4px; display: block; background: #100e1a; flex-shrink: 0; }
   .result-poster-placeholder {
     display: flex; align-items: center; justify-content: center; text-align: center;
@@ -325,6 +327,7 @@ function renderMovieList(imdbStreams, rdMaps) {
         const trackerBadge = hasTrackers
             ? `<span class="tracker-badge" title="El magnet incluye trackers propios">torrent</span>`
             : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
+        const typeLabel = s.type === "series" ? "Serie" : "Película";
 
         const hashKey = (s.infoHash || "").toLowerCase();
         const rdRows = RD_ACCOUNTS.map((acc) => {
@@ -344,7 +347,7 @@ function renderMovieList(imdbStreams, rdMaps) {
             ${poster}
             <div class="info">
                 <div class="name">${name}</div>
-                <div class="sub">${escapeHtml(imdbId)} · ${trackerBadge}</div>
+                <div class="sub">${escapeHtml(imdbId)} · ${typeLabel} · ${trackerBadge}</div>
                 <div class="sub mono">${escapeHtml(s.infoHash)}</div>
                 ${rdRows}
             </div>
@@ -636,7 +639,7 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
 function renderAddPage({ message, editId, values }) {
     const editing = !!editId;
     const v = Object.assign({
-        imdbId: "", title: "", magnet: "", poster: "",
+        imdbId: "", title: "", magnet: "", poster: "", type: "movie",
         rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
         prowlarrMode: true,
     }, values || {});
@@ -711,6 +714,18 @@ function renderAddPage({ message, editId, values }) {
             </div>
           </div>
 
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="content-type-switch"${v.type === "series" ? " checked" : ""}>
+              <span class="switch-slider"></span>
+            </label>
+            <div>
+              <div class="switch-title" id="content-type-title">${v.type === "series" ? "Serie" : "Película"}</div>
+              <div class="hint-field">Desliza para buscar una serie en vez de una película</div>
+            </div>
+          </div>
+          <input type="hidden" name="type" id="type-field" value="${escapeHtml(v.type || "movie")}">
+
           <label>Cachear en Real-Debrid al guardar</label>
           ${RD_ACCOUNTS.map((acc) => `<label class="checkbox-label"><input type="checkbox" name="rdCache${acc.id}" value="1"${v.rdCache[acc.id] ? " checked" : ""}> RD de ${acc.id}</label>`).join("")}
 
@@ -729,11 +744,6 @@ function renderAddPage({ message, editId, values }) {
                 <input id="prowlarr-query" placeholder="Título a buscar..." autocomplete="off" value="${escapeHtml(v.title)}">
                 <input type="hidden" id="prowlarr-original-query" value="">
               </div>
-              <select id="prowlarr-scope">
-                <option value="movie" selected>Película</option>
-                <option value="tv">Serie</option>
-                <option value="all">Todo</option>
-              </select>
               <select id="prowlarr-indexer">
                 <option value="">Todos los indexers</option>
                 <option value="The Pirate Bay">The Pirate Bay</option>
@@ -781,7 +791,20 @@ function renderAddPage({ message, editId, values }) {
       var imdbIdField = document.getElementById('imdbId');
       var movieNameInput = document.getElementById('movieName');
       var downloadRefField = document.getElementById('downloadRefField');
+      var contentTypeSwitch = document.getElementById('content-type-switch');
+      var contentTypeTitle = document.getElementById('content-type-title');
+      var typeField = document.getElementById('type-field');
       var manualHintText = ${JSON.stringify(magnetHint)};
+
+      function currentContentType() {
+        return contentTypeSwitch.checked ? 'series' : 'movie';
+      }
+
+      function applyContentType() {
+        var isSeries = contentTypeSwitch.checked;
+        contentTypeTitle.textContent = isSeries ? 'Serie' : 'Película';
+        typeField.value = isSeries ? 'series' : 'movie';
+      }
 
       function applyMode() {
         var isProwlarr = modeCheckbox.checked;
@@ -797,10 +820,12 @@ function renderAddPage({ message, editId, values }) {
       }
 
       modeCheckbox.addEventListener('change', applyMode);
+      contentTypeSwitch.addEventListener('change', applyContentType);
       magnetInput.addEventListener('input', function () {
         if (!magnetInput.readOnly) downloadRefField.value = '';
       });
       applyMode();
+      applyContentType();
 
       document.getElementById('main-form').addEventListener('submit', function (e) {
         if (!movieNameInput.readOnly && !imdbIdField.value) {
@@ -827,6 +852,7 @@ function renderAddPage({ message, editId, values }) {
       var resultsEl = document.getElementById('imdb-results');
       var posterImg = document.getElementById('poster-img');
       var posterPlaceholder = document.getElementById('poster-placeholder-text');
+      var contentTypeSwitch = document.getElementById('content-type-switch');
       var debounceTimer = null;
       var currentRequestId = 0;
 
@@ -887,7 +913,7 @@ function renderAddPage({ message, editId, values }) {
             fetch('/api/movie-resolve', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tmdbId: item.dataset.tmdbId }),
+              body: JSON.stringify({ tmdbId: item.dataset.tmdbId, type: (contentTypeSwitch.checked ? 'series' : 'movie') }),
             })
               .then(function (res) { return res.json(); })
               .then(function (data) {
@@ -924,7 +950,7 @@ function renderAddPage({ message, editId, values }) {
           fetch('/api/movie-search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ q: q }),
+            body: JSON.stringify({ q: q, type: (contentTypeSwitch.checked ? 'series' : 'movie') }),
           })
             .then(function (res) { return res.json(); })
             .then(function (data) {
@@ -953,7 +979,7 @@ function renderAddPage({ message, editId, values }) {
     (function () {
       var queryInput = document.getElementById('prowlarr-query');
       var originalQueryInput = document.getElementById('prowlarr-original-query');
-      var scopeSelect = document.getElementById('prowlarr-scope');
+      var contentTypeSwitch = document.getElementById('content-type-switch');
       var indexerSelect = document.getElementById('prowlarr-indexer');
       var esCheckbox = document.getElementById('prowlarr-es');
       var searchBtn = document.getElementById('prowlarr-search-btn');
@@ -1055,8 +1081,25 @@ function renderAddPage({ message, editId, values }) {
           // Real-Debrid en vez de un magnet (más fiable en trackers
           // privados, donde a veces RD no consigue negociar metadatos).
           downloadRefField.value = r.downloadRef || '';
-          tbody.querySelectorAll('.prowlarr-row').forEach(function (el) { el.classList.remove('selected'); });
+          tbody.querySelectorAll('.prowlarr-row').forEach(function (el) {
+            el.classList.remove('selected');
+            var go = el.querySelector('.go');
+            if (go) { go.textContent = 'Elegir →'; go.classList.remove('ok', 'err'); }
+          });
           row.classList.add('selected');
+          var goCell = row.querySelector('.go');
+          if (goCell) { goCell.textContent = '✓'; goCell.classList.add('ok'); }
+        }
+
+        function showResolveError(row, message) {
+          var goCell = row.querySelector('.go');
+          if (goCell) {
+            goCell.textContent = 'Error';
+            goCell.classList.add('err');
+            goCell.title = message;
+          }
+          magnetHintEl.textContent = message;
+          magnetHintEl.style.color = 'var(--err-text)';
         }
 
         tbody.querySelectorAll('.prowlarr-row').forEach(function (row) {
@@ -1069,7 +1112,6 @@ function renderAddPage({ message, editId, values }) {
             // Sin magnet directo: hay que descargar el .torrent y calcular
             // el hash, solo para este resultado (no se hizo al buscar).
             var goCell = row.querySelector('.go');
-            var originalGo = goCell.textContent;
             goCell.innerHTML = '<span class="spinner"></span>';
             fetch('/api/prowlarr-resolve', {
               method: 'POST',
@@ -1079,19 +1121,14 @@ function renderAddPage({ message, editId, values }) {
               .then(function (res) { return res.json(); })
               .then(function (data) {
                 if (data.error) {
-                  goCell.textContent = originalGo;
-                  magnetHintEl.textContent = data.error;
-                  magnetHintEl.style.color = 'var(--err-text)';
+                  showResolveError(row, data.error);
                   return;
                 }
                 r.magnet = data.magnet;
-                goCell.textContent = originalGo;
                 selectResult(row, r, data.magnet);
               })
               .catch(function () {
-                goCell.textContent = originalGo;
-                magnetHintEl.textContent = 'No se pudo resolver el magnet de este resultado.';
-                magnetHintEl.style.color = 'var(--err-text)';
+                showResolveError(row, 'No se pudo resolver el magnet de este resultado.');
               });
           });
         });
@@ -1104,7 +1141,7 @@ function renderAddPage({ message, editId, values }) {
         fetch('/api/prowlarr-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: q, scope: scopeSelect.value, indexer: indexerSelect.value, originalName: originalQueryInput.value }),
+          body: JSON.stringify({ q: q, scope: (contentTypeSwitch.checked ? 'tv' : 'movie'), indexer: indexerSelect.value, originalName: originalQueryInput.value }),
         })
           .then(function (res) { return res.json(); })
           .then(function (data) {
@@ -1189,6 +1226,7 @@ module.exports = async (req, res) => {
                     title: entry ? (entry.title || "") : "",
                     magnet: "",
                     poster: entry ? (entry.poster || "") : "",
+                    type: entry ? (entry.type || "movie") : "movie",
                     rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
                     prowlarrMode: !editId,
                 },
@@ -1205,9 +1243,10 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, action, prowlarrMode, downloadRef } = req.body || {};
+    const { imdbId, magnet, title, action, prowlarrMode, downloadRef, type } = req.body || {};
     const rdCache = {};
     RD_ACCOUNTS.forEach((acc) => { rdCache[acc.id] = !!(req.body || {})["rdCache" + acc.id]; });
+    const contentType = type === "series" ? "series" : "movie";
 
     // ── Eliminar (siempre vuelve al listado) ───────────────────
     if (action === "delete") {
@@ -1253,6 +1292,7 @@ module.exports = async (req, res) => {
         imdbId: imdbId || "",
         title: title || "",
         magnet: magnet || "",
+        type: contentType,
         rdCache,
         prowlarrMode: prowlarrMode === "1",
     };
@@ -1298,7 +1338,7 @@ module.exports = async (req, res) => {
         }
 
         const needsMeta = !existing || !existing.poster || !existing.name;
-        const cinemeta = needsMeta ? await fetchCinemetaMeta(imdbId) : null;
+        const cinemeta = needsMeta ? await fetchCinemetaMeta(imdbId, contentType) : null;
 
         current[imdbId] = {
             infoHash: parsed.infoHash,
@@ -1306,6 +1346,7 @@ module.exports = async (req, res) => {
             title: title.trim(),
             name: (cinemeta && cinemeta.name) || (existing && existing.name) || title.trim(),
             poster: (cinemeta && cinemeta.poster) || (existing && existing.poster) || null,
+            type: contentType,
         };
 
         await writeImdbStreamsToGitHub(

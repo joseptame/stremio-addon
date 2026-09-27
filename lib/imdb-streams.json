@@ -6,7 +6,8 @@
     ],
     "title": "Underworld",
     "name": "Underworld",
-    "poster": "https://images.metahub.space/poster/small/tt0320691/img"
+    "poster": "https://images.metahub.space/poster/small/tt0320691/img",
+    "type": "movie"
   },
   "tt1446714": {
     "infoHash": "a9c83e44f771f7171b1c9884e8454411b0489192",
@@ -15,7 +16,8 @@
     ],
     "title": "Prometheus",
     "name": "Prometheus",
-    "poster": "https://images.metahub.space/poster/small/tt1446714/img"
+    "poster": "https://images.metahub.space/poster/small/tt1446714/img",
+    "type": "movie"
   },
   "tt0338526": {
     "infoHash": "06f5dee590287bd2c2e9d9f692b7ae8f8d05222b",
@@ -24,7 +26,8 @@
     ],
     "title": "Van Helsing",
     "name": "Van Helsing",
-    "poster": "https://images.metahub.space/poster/small/tt0338526/img"
+    "poster": "https://images.metahub.space/poster/small/tt0338526/img",
+    "type": "movie"
   },
   "tt1060277": {
     "infoHash": "3d52f2317e19fbb9d0062efe7148f9b0b72d7bbd",
@@ -33,7 +36,8 @@
     ],
     "title": "Monstruoso",
     "name": "Cloverfield",
-    "poster": "https://images.metahub.space/poster/small/tt1060277/img"
+    "poster": "https://images.metahub.space/poster/small/tt1060277/img",
+    "type": "movie"
   },
   "tt2548396": {
     "infoHash": "98310cdadb1f5427e1b4a7cfecd3c0a4cb4a7277",
@@ -42,7 +46,8 @@
     ],
     "title": "The Cloverfield Paradox",
     "name": "The Cloverfield Paradox",
-    "poster": "https://images.metahub.space/poster/small/tt2548396/img"
+    "poster": "https://images.metahub.space/poster/small/tt2548396/img",
+    "type": "movie"
   },
   "tt1161864": {
     "infoHash": "fbbc6f4acc3bb72e72b4e79dc7911cd78de1784b",
@@ -51,6 +56,7 @@
     ],
     "title": "El rito",
     "name": "The Rite",
-    "poster": "https://images.metahub.space/poster/small/tt1161864/img"
+    "poster": "https://images.metahub.space/poster/small/tt1161864/img",
+    "type": "movie"
   }
 }

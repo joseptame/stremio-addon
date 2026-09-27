@@ -1,5 +1,16 @@
 const { CORTOS, IMDB_STREAMS } = require("../../../lib/data");
 
+function imdbMetas(filterType) {
+    return Object.entries(IMDB_STREAMS)
+        .filter(([, s]) => (s.type || "movie") === filterType)
+        .map(([imdbId, s]) => ({
+            id: imdbId,
+            type: filterType,
+            name: s.name || s.title,
+            poster: s.poster || undefined,
+        }));
+}
+
 module.exports = (req, res) => {
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -16,14 +27,11 @@ module.exports = (req, res) => {
             description: c.description,
         }));
 
-        const imdbMetas = Object.entries(IMDB_STREAMS).map(([imdbId, s]) => ({
-            id: imdbId,
-            type: "movie",
-            name: s.name || s.title,
-            poster: s.poster || undefined,
-        }));
+        return res.status(200).json({ metas: [...cortosMetas, ...imdbMetas("movie")] });
+    }
 
-        return res.status(200).json({ metas: [...cortosMetas, ...imdbMetas] });
+    if (type === "series" && id === "series-catalogo") {
+        return res.status(200).json({ metas: imdbMetas("series") });
     }
 
     return res.status(200).json({ metas: [] });

@@ -8,6 +8,10 @@ module.exports = async (req, res) => {
     const id = String(req.query.id || "").replace(/\.json$/, "");
     const rdKey = parseRdKeyFromConfig(req.query.config);
 
+    // Para series, Stremio pide streams por episodio (ttXXXXX:1:2). Se
+    // descarta el sufijo de temporada/episodio para localizar la ficha.
+    const baseId = id.includes(":") ? id.split(":")[0] : id;
+
     let infoHash;
     let sources;
     let name;
@@ -22,9 +26,9 @@ module.exports = async (req, res) => {
         name = "JFuster RD";
         title = corto.name;
         directUrl = corto.url || null;
-    } else if (id.startsWith("tt") && IMDB_STREAMS[id]) {
+    } else if (baseId.startsWith("tt") && IMDB_STREAMS[baseId]) {
         // Caso 2: id de IMDb (tt...) -> engancha stream a una ficha ya existente
-        const s = IMDB_STREAMS[id];
+        const s = IMDB_STREAMS[baseId];
         infoHash = s.infoHash.toLowerCase();
         sources = s.sources;
         name = "JFuster RD";
