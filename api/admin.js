@@ -1184,9 +1184,19 @@ async function writeImdbStreamsToGitHub(ghHeaders, apiUrl, data, sha, message) {
         headers: ghHeaders,
         body: JSON.stringify({ message, content: newContent, sha, branch: BRANCH }),
     });
+    const raw = await putRes.text();
     if (!putRes.ok) {
-        const errBody = await putRes.text();
-        throw new Error(`Error de la API de GitHub (${putRes.status}): ${errBody}`);
+        throw new Error(`Error de la API de GitHub (${putRes.status}): ${raw}`);
+    }
+    try {
+        const body = JSON.parse(raw);
+        if (!body || !body.commit || !body.commit.sha) {
+            throw new Error(`GitHub no devolvió un commit (respuesta inesperada): ${raw.slice(0, 300)}`);
+        }
+        return body.commit.sha;
+    } catch (err) {
+        if (err.message && err.message.startsWith("GitHub no devolvió")) throw err;
+        throw new Error(`Respuesta de GitHub no válida: ${raw.slice(0, 300)}`);
     }
 }
 
@@ -1349,7 +1359,7 @@ module.exports = async (req, res) => {
             type: contentType,
         };
 
-        await writeImdbStreamsToGitHub(
+        const commitSha = await writeImdbStreamsToGitHub(
             ghHeaders,
             apiUrl,
             current,
@@ -1394,7 +1404,8 @@ module.exports = async (req, res) => {
             rdNote = ` Real-Debrid (subido como ${method}) — ` + results.join(" · ") + ".";
         }
 
-        const successMsg = `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
+        const commitNote = commitSha ? ` Commit <code>${escapeHtml(commitSha.slice(0, 7))}</code>.` : "";
+        const successMsg = `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${commitNote}${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
         // Se renderiza aquí mismo con "current" (recién escrito) en vez de
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
