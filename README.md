@@ -270,3 +270,80 @@ Variable de entorno necesaria en Vercel:
 
 - `TMDB_API_KEY`: la "API Key (v3 auth)", gratuita, en
   https://www.themoviedb.org/settings/api.
+
+## Indexers adicionales con Jackett (para Prowlarr)
+
+Prowlarr no trae todos los indexers (p. ej. la mayoría de trackers públicos
+españoles, como DonTorrent o DivxTotal). Para esos se usa
+[Jackett](https://github.com/Jackett/Jackett), que mantiene una lista mucho
+mayor, y se conecta a Prowlarr como un indexer "Generic Torznab".
+
+### Contenedores (en el VPS, misma red Docker `media`)
+
+```bash
+# Prowlarr
+docker run -d --name prowlarr --network media --restart unless-stopped \
+  -p 9696:9696 -e TZ=Europe/Madrid \
+  -v /home/joseptame/prowlarr/config:/config \
+  lscr.io/linuxserver/prowlarr:latest
+
+# Jackett
+docker run -d --name jackett --network media --restart unless-stopped \
+  -p 9117:9117 -e TZ=Europe/Madrid \
+  -v /home/joseptame/jackett/config:/config \
+  lscr.io/linuxserver/jackett:latest
+```
+
+Ambos en la misma red `media` para que Prowlarr llegue a Jackett por su
+nombre de contenedor (`http://jackett:9117`).
+
+### Acceso a las UIs (Tailscale Funnel)
+
+- **Prowlarr**: `https://<nodo>.ts.net/` (raíz `/`).
+- **Jackett**: `https://<nodo>.ts.net/jackett/UI/Dashboard`.
+
+Configuración del Funnel:
+
+```bash
+tailscale funnel --bg http://127.0.0.1:9696                      # / -> Prowlarr
+tailscale funnel --bg --set-path /jackett http://127.0.0.1:9117  # /jackett -> Jackett
+tailscale funnel status
+```
+
+Para que Jackett funcione bajo `/jackett`, su `BasePathOverride` debe valer
+`/jackett` (Jackett → Settings → "Base path override", o editando
+`/config/Jackett/ServerConfig.json` y reiniciando el contenedor).
+
+### Añadir un indexer que Prowlarr no soporta
+
+1. En Jackett → **Add indexer** → elige el indexer → pon el **Site Link**
+   (dominio actual, estos sitios cambian de dominio a menudo) → **Test** →
+   **Save**.
+2. Copia la **API key** de Jackett (arriba en la UI, o con
+   `grep -i apikey /config/Jackett/ServerConfig.json`).
+3. En Prowlarr → **Add Indexer** → **Generic Torznab**:
+   - **URL**: `http://jackett:9117/api/v2.0/indexers/<id>/results/torznab/`
+   - **API key**: la de Jackett.
+   - **Tags**: `spanish` si es un tracker en español.
+   - **Test** → **Save**.
+
+El `<id>` es el id del indexer en Jackett (en minúsculas, p. ej. `divxtotal`).
+La URL exacta se copia con el botón "Copy Torznab Feed" de Jackett.
+
+### Cambiar qué UI está en la raíz del Funnel
+
+Si Jackett da problemas bajo `/jackett` (las redirecciones de su UI chocan
+con el recorte de ruta de Tailscale), puedes exponerlo temporalmente en la
+raíz y luego devolverla a Prowlarr:
+
+```bash
+tailscale funnel reset
+tailscale funnel --bg http://127.0.0.1:9117   # raíz -> Jackett (temporal)
+# ... configuras Jackett ...
+tailscale funnel reset
+tailscale funnel --bg http://127.0.0.1:9696   # raíz -> Prowlarr (de nuevo)
+```
+
+Ojo: durante el cambio temporal, la URL raíz sirve Jackett en vez de
+Prowlarr, así que el buscador del addon fallaría esos minutos. La
+configuración de Prowlarr no se toca.
