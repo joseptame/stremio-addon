@@ -727,6 +727,7 @@ function renderAddPage({ message, editId, values }) {
             <div class="prowlarr-search-row">
               <div class="field">
                 <input id="prowlarr-query" placeholder="Título a buscar..." autocomplete="off" value="${escapeHtml(v.title)}">
+                <input type="hidden" id="prowlarr-original-query" value="">
               </div>
               <select id="prowlarr-scope">
                 <option value="movie" selected>Película</option>
@@ -736,6 +737,7 @@ function renderAddPage({ message, editId, values }) {
               <select id="prowlarr-indexer">
                 <option value="">Todos los indexers</option>
                 <option value="The Pirate Bay">The Pirate Bay</option>
+                <option value="DivxTotal">DivxTotal</option>
               </select>
               <label class="checkbox-label"><input type="checkbox" id="prowlarr-es"> Solo español de España</label>
               <button type="button" id="prowlarr-search-btn" class="btn btn-edit">Buscar</button>
@@ -863,7 +865,7 @@ function renderAddPage({ message, editId, values }) {
             ? '<img class="poster" src="' + escapeHtmlClient(m.poster) + '" alt="" loading="lazy">'
             : '<div class="poster" style="display:flex;align-items:center;justify-content:center;">🎬</div>';
           var year = m.releaseInfo ? escapeHtmlClient(String(m.releaseInfo)) : '';
-          return '<div class="autocomplete-item" data-tmdb-id="' + escapeHtmlClient(m.tmdbId) + '" data-name="' + escapeHtmlClient(m.name) + '" data-poster="' + escapeHtmlClient(m.poster || '') + '">' +
+          return '<div class="autocomplete-item" data-tmdb-id="' + escapeHtmlClient(m.tmdbId) + '" data-name="' + escapeHtmlClient(m.name) + '" data-original-name="' + escapeHtmlClient(m.originalName || '') + '" data-poster="' + escapeHtmlClient(m.poster || '') + '">' +
             poster +
             '<div class="ac-info"><div class="ac-name">' + escapeHtmlClient(m.name) + '</div><div class="ac-year">' + year + '</div></div>' +
             '</div>';
@@ -877,6 +879,7 @@ function renderAddPage({ message, editId, values }) {
             imdbIdField.value = '';
             setPoster(item.dataset.poster);
             prowlarrQuery.value = item.dataset.name;
+            document.getElementById('prowlarr-original-query').value = item.dataset.originalName || '';
             document.getElementById('prowlarr-search-btn').click();
             closeResults();
             hintEl.textContent = 'Resolviendo el ID de IMDb…';
@@ -949,6 +952,7 @@ function renderAddPage({ message, editId, values }) {
     // ── Buscador de torrents (Prowlarr) ───────────────────────
     (function () {
       var queryInput = document.getElementById('prowlarr-query');
+      var originalQueryInput = document.getElementById('prowlarr-original-query');
       var scopeSelect = document.getElementById('prowlarr-scope');
       var indexerSelect = document.getElementById('prowlarr-indexer');
       var esCheckbox = document.getElementById('prowlarr-es');
@@ -1019,6 +1023,7 @@ function renderAddPage({ message, editId, values }) {
       });
 
       function renderResults() {
+        updateSortArrows();
         var results = sortedResults();
         if (results.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">Sin resultados' + (esCheckbox.checked ? ' en español de España' : '') + '.</td></tr>';
@@ -1099,7 +1104,7 @@ function renderAddPage({ message, editId, values }) {
         fetch('/api/prowlarr-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: q, scope: scopeSelect.value, indexer: indexerSelect.value }),
+          body: JSON.stringify({ q: q, scope: scopeSelect.value, indexer: indexerSelect.value, originalName: originalQueryInput.value }),
         })
           .then(function (res) { return res.json(); })
           .then(function (data) {
