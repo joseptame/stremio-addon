@@ -4,7 +4,7 @@ const { triggerRealDebridCache, listTorrents, torrentsByHash } = require("../lib
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
-const { escapeHtml, icon, headTags, themeCss, brandMark } = require("../lib/ui");
+const { escapeHtml, icon, headTags, themeCss, isLocal, renderTopBar, renderBottomNav } = require("../lib/ui");
 
 const OWNER = "joseptame";
 const REPO = "stremio-addon";
@@ -20,47 +20,6 @@ const RD_ACCOUNTS = [
     { id: "Ivan", envVar: "RD_KEY_IVAN" },
     { id: "Manolo", envVar: "RD_KEY_MANOLO" },
 ];
-
-// En `vercel dev` se avisa de que guardar/eliminar sigue escribiendo en el
-// repo de GitHub (y por tanto redespliega producción), aunque la UI sea local.
-function isLocal() {
-    return process.env.VERCEL_ENV === "development";
-}
-
-// ── Piezas comunes del panel: barra superior y barra inferior (PWA) ──
-function renderTopBar(active) {
-    const navLink = (key, href, iconName, label) =>
-        `<a href="${href}" class="${active === key ? "active" : ""}">${icon(iconName, 17)} ${label}</a>`;
-    return `<header class="topbar">
-    <div class="topbar-inner">
-      ${brandMark()}
-      ${isLocal() ? `<span class="env-badge" title="Estás en vercel dev. Guardar o eliminar escribe en GitHub y redespliega producción.">Local</span>` : ""}
-      <nav class="topbar-nav">
-        ${navLink("library", "/admin", "library", "Biblioteca")}
-        ${navLink("add", "/admin/add", "plus", "Añadir")}
-        ${navLink("install", "/configure", "link", "Instalar")}
-      </nav>
-      <div class="topbar-spacer"></div>
-      <div class="topbar-actions">
-        ${active === "add" ? "" : `<a class="btn btn-primary hide-mobile" href="/admin/add">${icon("plus", 18)} Añadir película</a>`}
-        <a class="icon-btn" href="/login?logout=1" title="Cerrar sesión" aria-label="Cerrar sesión">${icon("logout", 18)}</a>
-      </div>
-    </div>
-  </header>`;
-}
-
-function renderBottomNav(active) {
-    const searchItem = active === "library"
-        ? `<button type="button" id="nav-search">${icon("search", 22)}Buscar</button>`
-        : `<a href="/admin#buscar">${icon("search", 22)}Buscar</a>`;
-    return `<nav class="bottomnav" aria-label="Navegación">
-    <a href="/admin" class="${active === "library" ? "active" : ""}">${icon("library", 22)}Biblioteca</a>
-    ${searchItem}
-    <a href="/admin/add" class="add-item ${active === "add" ? "active" : ""}" aria-label="Añadir película"><span class="fab">${icon("plus", 24)}</span></a>
-    <a href="/configure">${icon("link", 22)}Instalar</a>
-    <a href="/login?logout=1">${icon("logout", 22)}Salir</a>
-  </nav>`;
-}
 
 // Recarga si la página vuelve del bfcache (típico al reabrir la PWA desde
 // el icono tras dejarla en segundo plano): sin esto, el usuario ve la
@@ -1013,7 +972,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         </div>
       </section>
 
-      <div class="savebar" id="savebar"${film ? "" : " hidden"}>
+      <div class="savebar" id="savebar"${editing || (film && v.magnet) ? "" : " hidden"}>
         <div class="save-summary">
           <div class="what" id="save-what">${v.title ? escapeHtml(v.title) : "Elige una película"}</div>
           <div class="sub" id="save-sub">${editing ? "Se conservará la copia actual" : "y una copia para poder guardar"}</div>
@@ -1066,6 +1025,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       var tmdbRequest = 0;
       var searchRequest = 0;
       var lastPicks = [];
+      var originalReady = Promise.resolve();
 
       function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -1079,8 +1039,9 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       function updateSummary() {
         var title = titleField.value;
         var hasFilm = editing || (!!title && !!imdbIdField.value);
-        // La barra de guardar solo aparece con una película ya elegida.
-        var showBar = editing || !!title;
+        // La barra de guardar solo aparece con película y copia elegidas
+        // (al editar, siempre: se puede guardar conservando la copia).
+        var showBar = editing || (!!title && !!magnetInput.value.trim());
         document.getElementById('savebar').hidden = !showBar;
         document.body.classList.toggle('has-savebar', showBar);
         var hasCopy = !!magnetInput.value.trim();
@@ -1386,11 +1347,11 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         if (prowlarrMode()) { magnetInput.value = ''; downloadRefField.value = ''; }
         updateSummary();
         releasesEl.innerHTML = '<div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div>';
-        fetch('/api/prowlarr-search', {
+        originalReady.then(function () { return fetch('/api/prowlarr-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ q: q, scope: (contentType() === 'series' ? 'tv' : 'movie'), indexer: indexerSelect.value, originalName: originalQueryInput.value }),
-        })
+        }); })
           .then(function (res) { return res.json(); })
           .then(function (data) {
             if (id !== searchRequest) return;
@@ -1438,6 +1399,28 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<span class="spinner" style="border-top-color:#fff"></span> Guardando…';
       });
+
+      // Al editar (o al volver de un error) no se ha elegido la película en
+      // TMDB, así que se piden aquí su título original — Prowlarr busca con
+      // el título en castellano y en el original — y, de paso, la sinopsis.
+      if (imdbIdField.value && !originalQueryInput.value) {
+        originalReady = fetch('/api/movie-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imdbId: imdbIdField.value, type: contentType() }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            var d = data && data.details;
+            if (!d) return;
+            if (!originalQueryInput.value) originalQueryInput.value = d.originalName || '';
+            if (d.overview) document.getElementById('film-overview').textContent = d.overview;
+            var meta = document.getElementById('film-meta');
+            if (d.year) meta.insertAdjacentHTML('beforeend', '<span class="tag">' + esc(d.year) + '</span>');
+            if (d.rating) meta.insertAdjacentHTML('beforeend', '<span class="tag gold">★ ' + esc(d.rating) + '</span>');
+          })
+          .catch(function () {});
+      }
 
       applyMode(prowlarrMode() ? 'prowlarr' : 'manual');
       if (!editing && !imdbIdField.value && searchInput.value.trim().length >= 2) searchTmdb();

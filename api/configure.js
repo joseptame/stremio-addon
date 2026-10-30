@@ -1,6 +1,9 @@
-const { headTags, themeCss, brandMark, icon } = require("../lib/ui");
+const { headTags, themeCss, brandMark, icon, renderTopBar, renderBottomNav } = require("../lib/ui");
+const { isAuthenticated } = require("../lib/adminAuth");
 
-function renderPage() {
+// La página es pública (la usa cualquiera para instalar el addon); solo si
+// quien la abre tiene sesión del panel se muestran sus barras de navegación.
+function renderPage({ loggedIn }) {
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -25,11 +28,15 @@ ${headTags("Instalar · JFuster RD")}
   .steps li::before { content: counter(s); flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
     font: 400 0.95rem/1 var(--font-display); background: var(--accent-soft); color: var(--accent); }
   @media (max-width: 480px) { .card { padding: 24px 20px; } h1 { font-size: 2rem; } }
+  body.panel { padding: 0; }
+  body.panel .wrap { padding: 32px 16px 64px; }
+  @media (max-width: 760px) { body.panel .wrap { padding: 20px 16px calc(var(--bottomnav-h) + var(--safe-b) + 32px); } }
 </style>
 </head>
-<body>
+<body${loggedIn ? ' class="panel"' : ""}>
+  ${loggedIn ? renderTopBar("install") : ""}
   <div class="wrap">
-    <div class="head">${brandMark({ href: "/configure", sub: "Addon de Stremio" })}</div>
+    ${loggedIn ? "" : `<div class="head">${brandMark({ href: "/configure", sub: "Addon de Stremio" })}</div>`}
 
     <section class="card">
       <h1>Instalar en Stremio</h1>
@@ -60,6 +67,7 @@ ${headTags("Instalar · JFuster RD")}
       </div>
     </section>
   </div>
+  ${loggedIn ? renderBottomNav("install") : ""}
 
   <script>
     document.getElementById('generate').addEventListener('click', function () {
@@ -92,5 +100,6 @@ ${headTags("Instalar · JFuster RD")}
 
 module.exports = (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    return res.status(200).send(renderPage());
+    const loggedIn = isAuthenticated(req, (process.env.ADMIN_PASSWORD || "").trim());
+    return res.status(200).send(renderPage({ loggedIn }));
 };
