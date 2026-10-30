@@ -1464,7 +1464,9 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
 
       applyMode(prowlarrMode() ? 'prowlarr' : 'manual');
       if (!editing && !imdbIdField.value && searchInput.value.trim().length >= 2) searchTmdb();
-      if (editing && queryInput.value.trim() && prowlarrMode()) runSearch();
+      // Al editar, o al volver de un error con la película ya elegida (p. ej.
+      // copia bloqueada en RD), se relanza la búsqueda para elegir otra.
+      if ((editing || imdbIdField.value) && queryInput.value.trim() && prowlarrMode()) runSearch();
     })();
   </script>
 </body>
@@ -1657,36 +1659,16 @@ module.exports = async (req, res) => {
             return addPageError(400, '<div class="msg err">Falta el magnet link para dar de alta una película nueva.</div>');
         }
 
-        const needsMeta = !existing || !existing.poster || !existing.name;
-        const cinemeta = needsMeta ? await fetchCinemetaMeta(imdbId, contentType) : null;
-
-        current[imdbId] = {
-            infoHash: parsed.infoHash,
-            sources: parsed.sources,
-            title: title.trim(),
-            name: (cinemeta && cinemeta.name) || (existing && existing.name) || title.trim(),
-            poster: (cinemeta && cinemeta.poster) || (existing && existing.poster) || null,
-            type: contentType,
-        };
-
-        const commitSha = await writeImdbStreamsToGitHub(
-            ghHeaders,
-            apiUrl,
-            current,
-            sha,
-            `${existing ? "Editar" : "Añadir"} stream para ${imdbId} vía panel admin`
-        );
-
-        const posterNote = current[imdbId].poster
-            ? " Póster y nombre obtenidos de Cinemeta."
-            : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
-
+        // Real-Debrid va antes del commit: si RD tiene la copia bloqueada
+        // por copyright, no se guarda en el catálogo (no se podría
+        // reproducir por RD) y se vuelve a la página para elegir otra.
         const rdAccounts = RD_ACCOUNTS
             .filter((acc) => rdCache[acc.id])
             .map((acc) => ({ label: acc.id, key: process.env[acc.envVar] }));
 
         let rdNote = "";
         let rdRejected = false;
+        let rdBlocked = false;
         if (rdAccounts.length > 0) {
             // Si el magnet viene de un resultado de Prowlarr, se vuelve a
             // descargar el .torrent real y se sube tal cual a RD en vez de
@@ -1710,6 +1692,7 @@ module.exports = async (req, res) => {
                 if (!rdResult) return `${acc.label}: no se pudo contactar con RD`;
                 if (rdResult.error) {
                     rdRejected = true;
+                    if (rdResult.error === "infringing_file") rdBlocked = true;
                     return `${acc.label}: ${rdErrorText(rdResult.error)}`;
                 }
                 return rdResult.cached
@@ -1718,6 +1701,36 @@ module.exports = async (req, res) => {
             }));
             rdNote = ` Real-Debrid (subido como ${method}) — ` + results.join(" · ") + ".";
         }
+
+        // El bloqueo es por hash (igual para todas las cuentas): no se guarda.
+        if (rdBlocked) {
+            values.magnet = "";
+            return addPageError(409, '<div class="msg err">No se ha guardado: Real-Debrid tiene bloqueada esta copia por derechos de autor. Elige otra copia de la lista.</div>');
+        }
+
+        const needsMeta = !existing || !existing.poster || !existing.name;
+        const cinemeta = needsMeta ? await fetchCinemetaMeta(imdbId, contentType) : null;
+
+        current[imdbId] = {
+            infoHash: parsed.infoHash,
+            sources: parsed.sources,
+            title: title.trim(),
+            name: (cinemeta && cinemeta.name) || (existing && existing.name) || title.trim(),
+            poster: (cinemeta && cinemeta.poster) || (existing && existing.poster) || null,
+            type: contentType,
+        };
+
+        const commitSha = await writeImdbStreamsToGitHub(
+            ghHeaders,
+            apiUrl,
+            current,
+            sha,
+            `${existing ? "Editar" : "Añadir"} stream para ${imdbId} vía panel admin`
+        );
+
+        const posterNote = current[imdbId].poster
+            ? " Póster y nombre obtenidos de Cinemeta."
+            : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
 
         const commitNote = commitSha ? ` Commit <code>${escapeHtml(commitSha.slice(0, 7))}</code>.` : "";
         // Si RD rechazó la copia en alguna cuenta, el aviso sale como error:
