@@ -28,7 +28,9 @@ ${headTags("Instalar · JFuster RD")}
   .steps li::before { content: counter(s); flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
     font: 400 0.95rem/1 var(--font-display); background: var(--accent-soft); color: var(--accent); }
   @media (max-width: 480px) { .card { padding: 24px 20px; } h1 { font-size: 2rem; } }
-  body.panel { padding: 0; }
+  /* Con sesión, el body igual que en el resto del panel: sin altura mínima
+     ni overflow propios, que en la PWA de iOS desplazan la barra inferior. */
+  body.panel { padding: 0; min-height: 0; position: static; overflow-x: clip; }
   body.panel .wrap { padding: 32px 16px 64px; }
   @media (max-width: 760px) { body.panel .wrap { padding: 20px 16px calc(var(--bottomnav-h) + var(--safe-b) + 32px); } }
 </style>
