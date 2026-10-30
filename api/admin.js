@@ -125,6 +125,10 @@ function libraryStyles() {
   .player-src { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 80px); padding: 4px 10px; border-radius: 999px; font-size: 0.7rem; color: var(--text-dim);
     background: rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; transition: opacity 0.3s; }
   .sheet-video:hover .player-src { opacity: 0; }
+  .player-ext { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 0.8rem; color: var(--text-mute); }
+  .player-ext[hidden] { display: none; }
+  .player-ext span { flex: 1 1 100%; }
+  .player-ext .btn { min-height: 34px; padding: 0 14px; font-size: 0.8rem; }
   .sheet.playing .sheet-body { margin-top: 0; padding-top: 24px; }
   .sheet-genres { margin-top: 10px; font-size: 0.82rem; color: var(--text-dim); }
   .sheet-tagline { margin: 0 0 8px; font-style: italic; color: var(--text); font-size: 0.92rem; }
@@ -364,6 +368,12 @@ ${headTags("Biblioteca · JFuster RD")}
         <button type="button" class="icon-btn sheet-close" id="sheet-close" aria-label="Cerrar">${icon("x", 18)}</button>
       </div>
       <div class="sheet-body">
+        <div class="player-ext" id="player-ext" hidden>
+          <span>¿No arranca o lo quieres en 4K? Original en:</span>
+          <a class="btn btn-ghost" id="ext-vlc" href="#">VLC</a>
+          <a class="btn btn-ghost" id="ext-infuse" href="#">Infuse</a>
+          <button type="button" class="btn btn-ghost" id="ext-copy">${icon("copy", 16)} Copiar enlace</button>
+        </div>
         <div class="sheet-top">
           <img class="sheet-poster" id="sheet-poster" alt="">
           <div style="min-width:0">
@@ -611,6 +621,34 @@ ${headTags("Biblioteca · JFuster RD")}
         sheetEl.classList.add('playing');
       }
 
+      // RD convierte el vídeo bajo demanda: con fuentes 4K el primer
+      // fragmento puede tardar hasta ~1 min (los siguientes llegan al
+      // momento). Se pide antes de abrir el reproductor para que este no
+      // se rinda esperando; RD sirve el HLS con CORS abierto.
+      function warmUp(hlsUrl) {
+        var controller = window.AbortController ? new AbortController() : null;
+        var timer = setTimeout(function () { if (controller) controller.abort(); }, 90000);
+        var opts = controller ? { signal: controller.signal } : {};
+        return fetch(hlsUrl, opts)
+          .then(function (r) { return r.text(); })
+          .then(function (txt) {
+            var first = txt.split('\\n').filter(function (l) { return l && l.charAt(0) !== '#'; })[0];
+            if (!first) return;
+            return fetch(new URL(first, hlsUrl).href, opts).then(function (r) { return r.arrayBuffer(); });
+          })
+          .catch(function () {})
+          .then(function () { clearTimeout(timer); });
+      }
+
+      // Esperas largas y reintentos: los saltos lejos también tardan en RD.
+      var HLS_CONFIG = {
+        fragLoadPolicy: { default: {
+          maxTimeToFirstByteMs: 90000, maxLoadTimeMs: 180000,
+          timeoutRetry: { maxNumRetry: 3, retryDelayMs: 0, maxRetryDelayMs: 0 },
+          errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+        } },
+      };
+
       function attachStream(video, data) {
         if (data.hls && video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = data.hls;
@@ -619,7 +657,7 @@ ${headTags("Biblioteca · JFuster RD")}
         if (data.hls) {
           return loadHlsJs().then(function (Hls) {
             if (!Hls || !Hls.isSupported()) throw new Error('hls');
-            hlsInstance = new Hls();
+            hlsInstance = new Hls(HLS_CONFIG);
             hlsInstance.loadSource(data.hls);
             hlsInstance.attachMedia(video);
           }).catch(function () { video.src = data.download; });
@@ -627,6 +665,38 @@ ${headTags("Biblioteca · JFuster RD")}
         video.src = data.download;
         return Promise.resolve();
       }
+
+      function startVideo(it, data) {
+        if (current !== it) return;
+        videoEl.innerHTML = '<video controls playsinline autoplay preload="auto"></video>' +
+          '<div class="player-src">' + esc(data.account) + ' · ' + esc(data.filename) + '</div>';
+        var video = videoEl.querySelector('video');
+        attachStream(video, data).then(function () {
+          var p = video.play();
+          if (p && p.catch) p.catch(function () {});
+        });
+      }
+
+      // Alternativa para el fichero original (4K, sin convertir, se puede
+      // adelantar al instante): abrirlo en VLC o Infuse, o copiar el enlace.
+      var extEl = document.getElementById('player-ext');
+      function showExternal(data) {
+        if (!data.download) { extEl.hidden = true; return; }
+        var url = encodeURIComponent(data.download);
+        document.getElementById('ext-vlc').href = 'vlc-x-callback://x-callback-url/stream?url=' + url;
+        document.getElementById('ext-infuse').href = 'infuse://x-callback-url/play?url=' + url;
+        extEl.dataset.url = data.download;
+        extEl.hidden = false;
+      }
+      document.getElementById('ext-copy').addEventListener('click', function () {
+        var btn = this;
+        if (!navigator.clipboard || !extEl.dataset.url) return;
+        navigator.clipboard.writeText(extEl.dataset.url).then(function () {
+          var old = btn.innerHTML;
+          btn.textContent = '¡Copiado!';
+          setTimeout(function () { btn.innerHTML = old; }, 1400);
+        });
+      });
 
       function playMovie() {
         var it = current;
@@ -643,13 +713,10 @@ ${headTags("Biblioteca · JFuster RD")}
           .then(function (data) {
             if (current !== it) return;
             if (data.error) { showPlayerMessage(esc(data.error)); return; }
-            videoEl.innerHTML = '<video controls playsinline autoplay preload="auto"></video>' +
-              '<div class="player-src">' + esc(data.account) + ' · ' + esc(data.filename) + '</div>';
-            var video = videoEl.querySelector('video');
-            attachStream(video, data).then(function () {
-              var p = video.play();
-              if (p && p.catch) p.catch(function () {});
-            });
+            showExternal(data);
+            if (!data.hls) return startVideo(it, data);
+            showPlayerMessage('<span class="spinner"></span> Real-Debrid está preparando el vídeo… con películas 4K puede tardar hasta un minuto.');
+            warmUp(data.hls).then(function () { startVideo(it, data); });
           })
           .catch(function () {
             if (current === it) showPlayerMessage('No se pudo preparar la reproducción ahora mismo.');
@@ -661,6 +728,7 @@ ${headTags("Biblioteca · JFuster RD")}
         var v = videoEl.querySelector('video');
         if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
         videoEl.innerHTML = '';
+        extEl.hidden = true;
         sheetEl.classList.remove('playing');
       }
 
