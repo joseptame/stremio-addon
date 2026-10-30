@@ -1,6 +1,6 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
-const { triggerRealDebridCache, listTorrents, torrentsByHash } = require("../lib/realdebrid");
+const { RD_ACCOUNTS, triggerRealDebridCache, listTorrents, torrentsByHash } = require("../lib/realdebrid");
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
@@ -11,15 +11,6 @@ const REPO = "stremio-addon";
 const BRANCH = "master";
 const FILE_PATH = "lib/imdb-streams.json";
 
-// Cuentas de Real-Debrid propias sobre las que el panel puede cachear un
-// stream al guardarlo y cuyo estado de descarga se muestra en el listado.
-// "id" se usa para el nombre del checkbox (rdCache<Id>) y como clave en los
-// mapas de estado; "envVar" es la variable de entorno con la API key.
-const RD_ACCOUNTS = [
-    { id: "Jfuster", envVar: "RD_KEY_JFUSTER" },
-    { id: "Ivan", envVar: "RD_KEY_IVAN" },
-    { id: "Manolo", envVar: "RD_KEY_MANOLO" },
-];
 
 // Recarga si la página vuelve del bfcache (típico al reabrir la PWA desde
 // el icono tras dejarla en segundo plano): sin esto, el usuario ve la
@@ -129,7 +120,11 @@ function libraryStyles() {
   .sheet.playing .sheet-hero { height: auto; aspect-ratio: 16 / 9; background: #000; }
   .sheet.playing .sheet-hero::after, .sheet.playing .sheet-hero > img, .sheet.playing .sheet-play { display: none; }
   .sheet.playing .sheet-video { display: block; position: absolute; inset: 0; }
-  .sheet-video iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .sheet-video iframe, .sheet-video video { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+  .player-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 20px; text-align: center; color: var(--text-dim); font-size: 0.9rem; }
+  .player-src { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 80px); padding: 4px 10px; border-radius: 999px; font-size: 0.7rem; color: var(--text-dim);
+    background: rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; transition: opacity 0.3s; }
+  .sheet-video:hover .player-src { opacity: 0; }
   .sheet.playing .sheet-body { margin-top: 0; padding-top: 24px; }
   .sheet-genres { margin-top: 10px; font-size: 0.82rem; color: var(--text-dim); }
   .sheet-tagline { margin: 0 0 8px; font-style: italic; color: var(--text); font-size: 0.92rem; }
@@ -390,7 +385,8 @@ ${headTags("Biblioteca · JFuster RD")}
           <div class="hash-row"><code id="sheet-hash"></code><button type="button" class="btn btn-ghost" id="sheet-copy">${icon("copy", 16)} Copiar</button></div>
         </div>
         <div class="sheet-actions">
-          <button type="button" class="btn btn-primary" id="sheet-trailer" style="display:none">${icon("play", 17)} Tráiler</button>
+          <button type="button" class="btn btn-primary" id="sheet-watch" style="display:none">${icon("play", 17)} Ver ahora</button>
+          <button type="button" class="btn btn-ghost" id="sheet-trailer" style="display:none">${icon("film", 17)} Tráiler</button>
           <a class="btn btn-ghost grow" id="sheet-edit" href="#">${icon("edit", 17)} Editar copia</a>
           <a class="btn btn-ghost" id="sheet-imdb" href="#" target="_blank" rel="noopener">IMDb</a>
           <button type="button" class="btn btn-danger" id="sheet-delete">${icon("trash", 17)} Eliminar</button>
@@ -503,6 +499,8 @@ ${headTags("Biblioteca · JFuster RD")}
             '<div class="bar"><span class="' + (ready ? 'ready' : '') + '" style="width:' + a.pct + '%"></span></div>' +
             '<span class="state' + (ready ? ' ready' : '') + '">' + (ready ? '✓ Listo' : esc(a.label)) + '</span></div>';
         }).join('');
+        var ready = it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
+        document.getElementById('sheet-watch').style.display = ready ? '' : 'none';
         loadDetails(it);
         document.getElementById('sheet-hash').textContent = it.infoHash;
         document.getElementById('sheet-edit').href = '/admin/add?edit=' + encodeURIComponent(it.id);
@@ -582,19 +580,93 @@ ${headTags("Biblioteca · JFuster RD")}
 
       function playTrailer() {
         if (!current || !current._trailer) return;
+        stopTrailer();
         videoEl.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + encodeURIComponent(current._trailer) +
           '?autoplay=1&rel=0&modestbranding=1" title="Tráiler" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
         sheetEl.classList.add('playing');
         sheetEl.scrollTop = 0;
       }
 
+      // ── Reproducir la película desde Real-Debrid ──
+      // El servidor da la lista HLS del streaming de RD (el iPhone la
+      // reproduce de forma nativa; en el resto se usa hls.js) y el fichero
+      // original como último recurso.
+      var watchBtn = document.getElementById('sheet-watch');
+      var hlsInstance = null;
+      var HLS_JS = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js';
+
+      function loadHlsJs() {
+        if (window.Hls) return Promise.resolve(window.Hls);
+        return new Promise(function (resolve, reject) {
+          var s = document.createElement('script');
+          s.src = HLS_JS;
+          s.onload = function () { resolve(window.Hls); };
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      function showPlayerMessage(html) {
+        videoEl.innerHTML = '<div class="player-msg">' + html + '</div>';
+        sheetEl.classList.add('playing');
+      }
+
+      function attachStream(video, data) {
+        if (data.hls && video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = data.hls;
+          return Promise.resolve();
+        }
+        if (data.hls) {
+          return loadHlsJs().then(function (Hls) {
+            if (!Hls || !Hls.isSupported()) throw new Error('hls');
+            hlsInstance = new Hls();
+            hlsInstance.loadSource(data.hls);
+            hlsInstance.attachMedia(video);
+          }).catch(function () { video.src = data.download; });
+        }
+        video.src = data.download;
+        return Promise.resolve();
+      }
+
+      function playMovie() {
+        var it = current;
+        if (!it) return;
+        stopTrailer();
+        showPlayerMessage('<span class="spinner"></span> Preparando la película en Real-Debrid…');
+        sheetEl.scrollTop = 0;
+        fetch('/api/movie-play', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ infoHash: it.infoHash }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (current !== it) return;
+            if (data.error) { showPlayerMessage(esc(data.error)); return; }
+            videoEl.innerHTML = '<video controls playsinline autoplay preload="auto"></video>' +
+              '<div class="player-src">' + esc(data.account) + ' · ' + esc(data.filename) + '</div>';
+            var video = videoEl.querySelector('video');
+            attachStream(video, data).then(function () {
+              var p = video.play();
+              if (p && p.catch) p.catch(function () {});
+            });
+          })
+          .catch(function () {
+            if (current === it) showPlayerMessage('No se pudo preparar la reproducción ahora mismo.');
+          });
+      }
+
       function stopTrailer() {
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        var v = videoEl.querySelector('video');
+        if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
         videoEl.innerHTML = '';
         sheetEl.classList.remove('playing');
       }
 
       playBtn.addEventListener('click', playTrailer);
       trailerBtn.addEventListener('click', playTrailer);
+      watchBtn.addEventListener('click', playMovie);
 
       function close() {
         stopTrailer();
