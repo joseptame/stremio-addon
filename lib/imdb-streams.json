@@ -18,5 +18,15 @@
     "name": "The Rite",
     "poster": "https://images.metahub.space/poster/small/tt1161864/img",
     "type": "movie"
+  },
+  "tt22084616": {
+    "infoHash": "b3f36d6f7e65c8b2ee33f43e7f78a2705aa226fe",
+    "sources": [
+      "tracker:https://tracker.milnueve.cc/announce/9b6e17369ee868ce339ba67085f4a473"
+    ],
+    "title": "Spider-Man: Brand New Day",
+    "name": "Spider-Man: Brand New Day",
+    "poster": "https://images.metahub.space/poster/small/tt22084616/img",
+    "type": "movie"
   }
 }
