@@ -126,7 +126,9 @@ function libraryStyles() {
     background: rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; transition: opacity 0.3s; }
   .sheet-video:hover .player-src { opacity: 0; }
   .player-ext { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 0.8rem; color: var(--text-mute); }
-  .player-ext[hidden] { display: none; }
+  .player-ext[hidden], .player-ext span[hidden] { display: none; }
+  #ext-hint { color: var(--gold); }
+  #ext-hint a { color: inherit; text-decoration: underline; }
   .player-ext span { flex: 1 1 100%; }
   .player-ext .btn { min-height: 34px; padding: 0 14px; font-size: 0.8rem; }
   .sheet.playing .sheet-body { margin-top: 0; padding-top: 24px; }
@@ -373,6 +375,7 @@ ${headTags("Biblioteca · JFuster RD")}
           <a class="btn btn-ghost" id="ext-vlc" href="#">VLC</a>
           <a class="btn btn-ghost" id="ext-infuse" href="#">Infuse</a>
           <button type="button" class="btn btn-ghost" id="ext-copy">${icon("copy", 16)} Copiar enlace</button>
+          <span id="ext-hint" hidden></span>
         </div>
         <div class="sheet-top">
           <img class="sheet-poster" id="sheet-poster" alt="">
@@ -692,8 +695,34 @@ ${headTags("Biblioteca · JFuster RD")}
         document.getElementById('ext-vlc').href = 'vlc-x-callback://x-callback-url/stream?url=' + url;
         document.getElementById('ext-infuse').href = 'infuse://x-callback-url/play?url=' + url;
         extEl.dataset.url = data.download;
+        extHint.hidden = true;
         extEl.hidden = false;
       }
+
+      // Si la app no está instalada, iOS no sabe abrir su enlace (Safari
+      // avisa de "dirección no válida") y la página sigue a la vista: tras
+      // un par de segundos se ofrece instalarla desde la App Store.
+      var extHint = document.getElementById('ext-hint');
+      var APP_STORE = {
+        'ext-vlc': { name: 'VLC', url: 'https://apps.apple.com/app/id650377962' },
+        'ext-infuse': { name: 'Infuse', url: 'https://apps.apple.com/app/id1136220934' },
+      };
+      ['ext-vlc', 'ext-infuse'].forEach(function (id) {
+        document.getElementById(id).addEventListener('click', function () {
+          var app = APP_STORE[id];
+          var left = false;
+          function onHide() { if (document.hidden) left = true; }
+          document.addEventListener('visibilitychange', onHide);
+          setTimeout(function () {
+            document.removeEventListener('visibilitychange', onHide);
+            if (left) return;
+            extHint.innerHTML = '¿No se ha abierto? Necesitas tener ' + app.name + ' instalada: ' +
+              '<a href="' + app.url + '" target="_blank" rel="noopener">descárgala gratis en la App Store</a>' +
+              ' y vuelve a pulsar el botón.';
+            extHint.hidden = false;
+          }, 2500);
+        });
+      });
       document.getElementById('ext-copy').addEventListener('click', function () {
         var btn = this;
         if (!navigator.clipboard || !extEl.dataset.url) return;
