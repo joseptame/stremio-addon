@@ -1,10 +1,5 @@
 const { createSessionCookie, clearSessionCookie, isAuthenticated } = require("../lib/adminAuth");
-
-function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (c) => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    }[c]));
-}
+const { escapeHtml, headTags, themeCss } = require("../lib/ui");
 
 function safeNext(next) {
     return next && String(next).startsWith("/") && !String(next).startsWith("//") ? next : "/admin";
@@ -14,86 +9,66 @@ function renderLoginPage({ error, next }) {
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/icon.png">
-<link rel="manifest" href="/site.webmanifest">
-<link rel="apple-touch-icon" href="/icon.png">
-<meta name="theme-color" content="#7b5bf0">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FilmRD">
-<title>Entrar · JFuster RD</title>
-<style>
-  :root {
-    --bg: #14121f; --panel: #1d1a2b; --panel-border: #2c2840;
-    --text: #eae7f5; --text-dim: #9691ad;
-    --accent: #7b5bf0; --accent-hover: #6a4adf;
-    --err-bg: #331b22; --err-text: #f28ba0;
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    background: var(--bg); color: var(--text); margin: 0;
-    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
-  }
-  .login-card {
-    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px;
-    padding: 40px 36px; width: 100%; max-width: 380px;
-  }
-  .login-card header { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 32px; }
-  .login-card img { width: 48px; height: 48px; border-radius: 11px; }
-  .login-card h1 { font-size: 1.2rem; margin: 0; }
-  .login-card p { margin: 0; color: var(--text-dim); font-size: 0.85rem; }
-  form { display: flex; flex-direction: column; }
-  label { display: block; margin-top: 26px; font-weight: 600; font-size: 0.88rem; line-height: 1.3; }
-  label:first-of-type { margin-top: 0; }
-  input {
-    display: block; width: 100%; padding: 12px 14px; margin-top: 12px; box-sizing: border-box;
-    font-size: 0.95rem; background: #100e1a; border: 1px solid var(--panel-border);
-    border-radius: 9px; color: var(--text);
-  }
-  input:focus { outline: none; border-color: var(--accent); }
-  .password-wrap { position: relative; margin-top: 12px; }
-  .password-wrap input { margin-top: 0; padding-right: 44px; }
-  .toggle-password {
-    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-    background: none; border: none; margin: 0; padding: 0; cursor: pointer; color: var(--text-dim);
-  }
+${headTags("Entrar · JFuster RD")}
+<style>${themeCss()}
+  body { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; position: relative; overflow-x: hidden; }
+  /* Fondo: focos de neón difusos + tira de película, sin mostrar el catálogo
+     (la página de login es pública). */
+  .stage { position: fixed; inset: 0; z-index: -1; overflow: hidden; }
+  .stage::before { content: ""; position: absolute; width: 70vmax; height: 70vmax; left: -20vmax; top: -30vmax; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,61,87,0.22), transparent 60%); }
+  .stage::after { content: ""; position: absolute; width: 60vmax; height: 60vmax; right: -25vmax; bottom: -30vmax; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,194,71,0.12), transparent 60%); }
+  .filmstrip { position: absolute; left: -10%; right: -10%; top: 50%; height: 120px; transform: translateY(-50%) rotate(-8deg); opacity: 0.07;
+    background:
+      repeating-linear-gradient(90deg, #fff 0 18px, transparent 18px 34px) top / 100% 14px no-repeat,
+      repeating-linear-gradient(90deg, #fff 0 18px, transparent 18px 34px) bottom / 100% 14px no-repeat,
+      repeating-linear-gradient(90deg, transparent 0 8px, rgba(255,255,255,0.5) 8px 150px, transparent 150px 158px) center / 100% 76px no-repeat; }
+  .login-card { width: 100%; max-width: 400px; padding: 40px 34px 34px; border-radius: 24px;
+    background: rgba(23,21,30,0.82); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--line-strong); box-shadow: 0 40px 80px -24px rgba(0,0,0,0.9); animation: fade-up 0.45s ease both; }
+  .login-head { text-align: center; margin-bottom: 30px; }
+  .login-head img { width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 16px; box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 0 40px -6px var(--accent-glow); }
+  .login-head .brand-name { font-size: 2.4rem; }
+  .login-head p { margin: 8px 0 0; color: var(--text-dim); font-size: 0.9rem; }
+  form { display: grid; gap: 18px; }
+  .password-wrap { position: relative; }
+  .password-wrap .input { padding-right: 50px; }
+  .toggle-password { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 38px; height: 38px; border: 0; background: none;
+    display: flex; align-items: center; justify-content: center; color: var(--text-mute); cursor: pointer; border-radius: 8px; }
   .toggle-password:hover { color: var(--text); }
-  .toggle-password svg { width: 20px; height: 20px; }
-  .checkbox-label { display: flex; align-items: center; gap: 9px; font-weight: 400; margin-top: 30px; font-size: 0.88rem; }
-  .checkbox-label input { width: auto; margin-top: 0; }
-  button {
-    width: 100%; margin-top: 10px; padding: 13px 16px; font-size: 0.95rem; font-weight: 600;
-    cursor: pointer; border: none; border-radius: 9px; background: var(--accent); color: white;
-  }
-  button:hover { background: var(--accent-hover); }
-  .msg { margin-bottom: 24px; padding: 12px 14px; border-radius: 9px; font-size: 0.85rem; line-height: 1.4; background: var(--err-bg); color: var(--err-text); }
+  .remember { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; color: var(--text-dim); cursor: pointer; }
+  .remember input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .login-card .btn-primary { min-height: 50px; font-size: 0.95rem; margin-top: 4px; }
+  .msg { margin-bottom: 22px; }
 </style>
 </head>
 <body>
+  <div class="stage" aria-hidden="true"><div class="filmstrip"></div></div>
   <div class="login-card">
-    <header>
+    <div class="login-head">
       <img src="/icon.png" alt="">
-      <h1>JFuster RD</h1>
-      <p>Panel de administración</p>
-    </header>
-    ${error ? `<div class="msg">${escapeHtml(error)}</div>` : ""}
+      <div class="brand-name">JFUSTER <b>RD</b></div>
+      <p>Entra para gestionar tu videoclub</p>
+    </div>
+    ${error ? `<div class="msg err">${escapeHtml(error)}</div>` : ""}
     <form method="POST" action="/login">
       <input type="hidden" name="next" value="${escapeHtml(safeNext(next))}">
-      <label for="username">Usuario</label>
-      <input id="username" name="username" required autocomplete="username">
-      <label for="password">Contraseña</label>
-      <div class="password-wrap">
-        <input id="password" name="password" type="password" required autocomplete="current-password">
-        <button type="button" class="toggle-password" id="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">
-          <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
+      <div>
+        <label class="field-label" for="username">Usuario</label>
+        <input class="input" id="username" name="username" required autocomplete="username">
       </div>
-      <label class="checkbox-label"><input type="checkbox" name="remember" value="1" checked> Recordarme en este dispositivo</label>
-      <button type="submit">Entrar</button>
+      <div>
+        <label class="field-label" for="password">Contraseña</label>
+        <div class="password-wrap">
+          <input class="input" id="password" name="password" type="password" required autocomplete="current-password">
+          <button type="button" class="toggle-password" id="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">
+            <svg id="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <label class="remember"><input type="checkbox" name="remember" value="1" checked> Recordarme en este dispositivo</label>
+      <button type="submit" class="btn btn-primary btn-block">Entrar</button>
     </form>
   </div>
   <script>

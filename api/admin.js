@@ -4,6 +4,7 @@ const { triggerRealDebridCache, listTorrents, torrentsByHash } = require("../lib
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
+const { escapeHtml, icon, headTags, themeCss, brandMark } = require("../lib/ui");
 
 const OWNER = "joseptame";
 const REPO = "stremio-addon";
@@ -20,282 +21,203 @@ const RD_ACCOUNTS = [
     { id: "Manolo", envVar: "RD_KEY_MANOLO" },
 ];
 
-function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (c) => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    }[c]));
+// En `vercel dev` se avisa de que guardar/eliminar sigue escribiendo en el
+// repo de GitHub (y por tanto redespliega producción), aunque la UI sea local.
+function isLocal() {
+    return process.env.VERCEL_ENV === "development";
 }
 
-// ── Estilos compartidos entre el listado y la página de añadir ────────
-function baseStyles() {
+// ── Piezas comunes del panel: barra superior y barra inferior (PWA) ──
+function renderTopBar(active) {
+    const navLink = (key, href, iconName, label) =>
+        `<a href="${href}" class="${active === key ? "active" : ""}">${icon(iconName, 17)} ${label}</a>`;
+    return `<header class="topbar">
+    <div class="topbar-inner">
+      ${brandMark()}
+      ${isLocal() ? `<span class="env-badge" title="Estás en vercel dev. Guardar o eliminar escribe en GitHub y redespliega producción.">Local</span>` : ""}
+      <nav class="topbar-nav">
+        ${navLink("library", "/admin", "library", "Biblioteca")}
+        ${navLink("add", "/admin/add", "plus", "Añadir")}
+        ${navLink("install", "/configure", "link", "Instalar")}
+      </nav>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-actions">
+        ${active === "add" ? "" : `<a class="btn btn-primary hide-mobile" href="/admin/add">${icon("plus", 18)} Añadir película</a>`}
+        <a class="icon-btn" href="/login?logout=1" title="Cerrar sesión" aria-label="Cerrar sesión">${icon("logout", 18)}</a>
+      </div>
+    </div>
+  </header>`;
+}
+
+function renderBottomNav(active) {
+    const searchItem = active === "library"
+        ? `<button type="button" id="nav-search">${icon("search", 22)}Buscar</button>`
+        : `<a href="/admin#buscar">${icon("search", 22)}Buscar</a>`;
+    return `<nav class="bottomnav" aria-label="Navegación">
+    <a href="/admin" class="${active === "library" ? "active" : ""}">${icon("library", 22)}Biblioteca</a>
+    ${searchItem}
+    <a href="/admin/add" class="add-item ${active === "add" ? "active" : ""}" aria-label="Añadir película"><span class="fab">${icon("plus", 24)}</span></a>
+    <a href="/configure">${icon("link", 22)}Instalar</a>
+    <a href="/login?logout=1">${icon("logout", 22)}Salir</a>
+  </nav>`;
+}
+
+// Recarga si la página vuelve del bfcache (típico al reabrir la PWA desde
+// el icono tras dejarla en segundo plano): sin esto, el usuario ve la
+// versión que tenía cargada la última vez, no la actual.
+const BFCACHE_RELOAD_SCRIPT = `window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });`;
+
+// ── Estilos de la biblioteca ─────────────────────────────────────────
+function libraryStyles() {
     return `
-  :root {
-    --bg: #14121f;
-    --panel: #1d1a2b;
-    --panel-border: #2c2840;
-    --text: #eae7f5;
-    --text-dim: #9691ad;
-    --accent: #7b5bf0;
-    --accent-hover: #6a4adf;
-    --ok-bg: #17301f;
-    --ok-text: #7ee2a0;
-    --err-bg: #331b22;
-    --err-text: #f28ba0;
-    --danger: #e14f6a;
-    --danger-hover: #c73f58;
+  main { max-width: 1400px; margin: 0 auto; padding: 0 24px 80px; }
+  .hero {
+    position: relative; margin: 20px 0 36px; border-radius: 22px; overflow: hidden;
+    min-height: 380px; display: flex; align-items: flex-end; isolation: isolate;
+    background: var(--surface); border: 1px solid rgba(255,255,255,0.05);
   }
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    margin: 0;
-    padding: 32px 16px 64px;
-  }
-  .wrap { max-width: 1200px; margin: 0 auto; }
-  .wrap.narrow { max-width: 620px; }
-  header { margin-bottom: 24px; }
-  .header-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
-  .header-left { display: flex; align-items: center; gap: 12px; }
-  header img { width: 40px; height: 40px; border-radius: 8px; }
-  header h1 { font-size: 1.3rem; margin: 0; }
-  header p { margin: 2px 0 0; color: var(--text-dim); font-size: 0.85rem; }
-  .card {
-    background: var(--panel);
-    border: 1px solid var(--panel-border);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-  }
-  .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
-  .card > p.desc { margin: 0 0 16px; color: var(--text-dim); font-size: 0.85rem; }
-  label { display: block; margin-top: 14px; font-weight: 600; font-size: 0.9rem; }
-  input {
-    width: 100%;
-    padding: 10px 12px;
-    margin-top: 6px;
-    box-sizing: border-box;
-    font-size: 0.95rem;
-    background: #100e1a;
-    border: 1px solid var(--panel-border);
-    border-radius: 8px;
-    color: var(--text);
-  }
-  input:focus { outline: none; border-color: var(--accent); }
-  input::placeholder { color: #5c5875; }
-  input:read-only { opacity: 0.65; cursor: default; }
-  .hint-field { color: var(--text-dim); font-size: 0.78rem; margin-top: 4px; }
-  .autocomplete-wrap { position: relative; }
-  .autocomplete-results {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 4px;
-    background: #100e1a;
-    border: 1px solid var(--panel-border);
-    border-radius: 8px;
-    max-height: 320px;
-    overflow-y: auto;
-    z-index: 50;
-    scrollbar-width: thin;
-    scrollbar-color: #3a3555 transparent;
-  }
-  .autocomplete-results.block { display: block; position: static; margin-top: 8px; max-height: 280px; }
-  .autocomplete-results::-webkit-scrollbar { width: 8px; }
-  .autocomplete-results::-webkit-scrollbar-track { background: transparent; }
-  .autocomplete-results::-webkit-scrollbar-thumb { background: #3a3555; border-radius: 8px; }
-  .autocomplete-results::-webkit-scrollbar-thumb:hover { background: var(--accent); }
-  .autocomplete-results.open { display: block; }
-  .autocomplete-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
-  .autocomplete-item:hover, .autocomplete-item.active { background: #201c30; }
-  .autocomplete-item .poster { width: 32px; height: 46px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: #100e1a; }
-  .autocomplete-item .ac-info { min-width: 0; }
-  .autocomplete-item .ac-name { font-size: 0.88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .autocomplete-item .ac-year { font-size: 0.75rem; color: var(--text-dim); }
-  .autocomplete-empty { padding: 10px; font-size: 0.85rem; color: var(--text-dim); }
-  .checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: 400; margin-top: 8px; font-size: 0.9rem; cursor: pointer; }
-  .checkbox-label input { width: auto; margin-top: 0; }
-  .btn {
-    display: inline-block;
-    padding: 10px 16px;
-    font-size: 0.9rem;
-    cursor: pointer;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    text-decoration: none;
-    text-align: center;
-  }
-  .btn.full { width: 100%; margin-top: 20px; }
-  .btn-primary { background: var(--accent); color: white; }
-  .btn-primary:hover { background: var(--accent-hover); }
-  .msg { margin-bottom: 20px; padding: 12px 14px; border-radius: 8px; font-size: 0.9rem; line-height: 1.4; }
-  .ok { background: var(--ok-bg); color: var(--ok-text); }
-  .err { background: var(--err-bg); color: var(--err-text); }
-  .footer-hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 16px; text-align: center; }
-  .movie-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .movie-item { display: flex; align-items: center; gap: 12px; background: #17142399; border: 1px solid var(--panel-border); border-radius: 10px; padding: 10px; }
-  .poster { width: 46px; height: 68px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: #100e1a; }
-  .poster-placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
-  .info { flex: 1; min-width: 0; }
-  .info .name { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ready-check { color: #3ddc84; text-shadow: 0 0 4px #3ddc8480; }
-  .info .sub { color: var(--text-dim); font-size: 0.75rem; }
-  .rd-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 0.72rem; color: var(--text-dim); }
-  .rd-row .rd-name { flex-shrink: 0; width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rd-bar { flex: 1; height: 5px; min-width: 24px; background: #100e1a; border-radius: 4px; overflow: hidden; }
-  .rd-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
-  .rd-row .ready-check { flex: 1; }
-  .rd-pct { flex-shrink: 0; width: 34px; text-align: right; }
-  .info .mono { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tracker-badge { font-size: 0.72rem; font-weight: 600; white-space: nowrap; color: var(--text-dim); }
-  .actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 90px; }
-  .btn-edit { background: #2c2840; color: var(--text); }
-  .btn-edit:hover { background: #383253; }
-  .btn-neon-red {
-    background: #1a0e14; color: #ff3b5c; border: 1px solid #ff3b5c;
-    box-shadow: 0 0 3px #ff3b5c66, 0 0 7px #ff3b5c33;
-    text-shadow: 0 0 3px #ff3b5c4d;
-  }
-  .btn-neon-red:hover { background: #240f16; box-shadow: 0 0 5px #ff3b5c99, 0 0 12px #ff3b5c4d; }
-  .btn-neon-purple {
-    background: #150f26; color: #b18bff; border: 1px solid #b18bff;
-    box-shadow: 0 0 3px #b18bff66, 0 0 7px #b18bff33;
-    text-shadow: 0 0 3px #b18bff4d;
-  }
-  .btn-neon-purple:hover { background: #1c1533; box-shadow: 0 0 5px #b18bff99, 0 0 12px #b18bff4d; }
-  .delete-form { margin: 0; }
-  .btn-delete { background: var(--danger); color: white; width: 100%; }
-  .btn-delete:hover { background: var(--danger-hover); }
-  .empty { color: var(--text-dim); font-size: 0.9rem; }
-  .search-wrap { position: relative; margin-bottom: 16px; }
-  .search-wrap input { padding-left: 36px; margin-top: 0; }
-  .search-wrap svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); opacity: 0.5; }
-  .pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
-  .pagination button { background: #2c2840; color: var(--text); border: none; border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
-  .pagination button:hover:not(:disabled) { background: #383253; }
-  .pagination button:disabled { opacity: 0.35; cursor: default; }
-  .pagination span { color: var(--text-dim); font-size: 0.85rem; }
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(8, 7, 14, 0.7); align-items: center; justify-content: center; padding: 16px; z-index: 100; }
-  .modal-overlay.open { display: flex; }
-  .modal { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; padding: 22px; width: 100%; max-width: 360px; }
-  .modal h3 { margin: 0 0 6px; font-size: 1.05rem; }
-  .modal p { margin: 0; color: var(--text-dim); font-size: 0.85rem; line-height: 1.4; }
-  .modal .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
-  .modal .modal-actions .btn { flex: 1; margin-top: 0; }
-  .btn-cancel { background: #2c2840; color: var(--text); }
-  .btn-cancel:hover { background: #383253; }
-  .switch-row { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 12px; background: #100e1a; border: 1px solid var(--panel-border); border-radius: 8px; }
-  .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .switch-slider { position: absolute; inset: 0; cursor: pointer; background: #3a3555; border-radius: 999px; transition: background 0.15s; }
-  .switch-slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.15s; }
-  .switch input:checked + .switch-slider { background: var(--accent); }
-  .switch input:checked + .switch-slider::before { transform: translateX(20px); }
-  .switch input:focus-visible + .switch-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .switch-title { font-weight: 600; font-size: 0.9rem; }
-  #prowlarr-panel { margin-top: 4px; }
-  .wrap.sheet-wrap { max-width: 980px; }
-  .sheet { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
-  /* Sin min-width:0 un hijo de grid no se encoge por debajo del contenido
-     que lleve dentro (aquí, la tabla de resultados) y se sale de pantalla. */
-  .sheet .card { min-width: 0; }
-  @media (max-width: 760px) {
-    .sheet { grid-template-columns: 1fr; }
-    .poster-preview { max-width: 200px; margin: 0 auto 6px; }
-  }
-  .poster-preview {
-    width: 100%;
-    aspect-ratio: 2 / 3;
-    border: 1px dashed var(--panel-border);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    color: var(--text-dim);
-    font-size: 0.82rem;
-    padding: 14px;
-    overflow: hidden;
-    background: #100e1a;
-    margin-bottom: 6px;
-  }
-  .poster-preview img { width: 100%; height: 100%; object-fit: cover; }
-  .prowlarr-search-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 14px 0; }
-  .prowlarr-search-row .field { flex: 1; min-width: 180px; }
-  .prowlarr-search-row input { margin-top: 0; }
-  .prowlarr-search-row .checkbox-label { margin: 0 0 10px; white-space: nowrap; }
-  .prowlarr-search-row .btn { margin: 0; white-space: nowrap; }
-  .prowlarr-search-row select {
-    margin-top: 0; width: auto; padding: 10px 32px 10px 12px; font-size: 0.9rem;
-    background: #100e1a; border: 1px solid var(--panel-border); border-radius: 8px; color: var(--text);
-  }
-  .prowlarr-search-row select:focus { outline: none; border-color: var(--accent); }
-  .table-wrap { overflow-x: auto; border: 1px solid var(--panel-border); border-radius: 10px; }
-  .results-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .results-table th {
-    text-align: left; padding: 10px 12px; color: var(--text-dim); font-weight: 600;
-    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
-    border-bottom: 1px solid var(--panel-border); white-space: nowrap;
-  }
-  .results-table th.sortable { cursor: pointer; user-select: none; }
-  .results-table th.sortable:hover { color: var(--text); }
-  .results-table th.sortable .sort-arrow { color: var(--accent); font-size: 0.65rem; }
-  .results-table td { padding: 10px 12px; border-bottom: 1px solid var(--panel-border); vertical-align: top; }
-  .results-table tbody tr { cursor: pointer; }
-  .results-table tbody tr:hover { background: #201c30; }
-  .results-table tbody tr:last-child td { border-bottom: none; }
-  .results-table tbody tr.selected { background: #2a2340; box-shadow: inset 3px 0 0 var(--accent); }
-  .results-table .title-cell { max-width: 340px; }
-  .results-table .go { color: var(--accent); white-space: nowrap; font-weight: 600; font-size: 0.8rem; }
-  .results-table .go.ok { color: var(--ok-text); }
-  .results-table .go.err { color: var(--err-text); font-size: 0.72rem; }
-  .result-poster { width: 32px; height: 46px; object-fit: cover; border-radius: 4px; display: block; background: #100e1a; flex-shrink: 0; }
-  .result-poster-placeholder {
-    display: flex; align-items: center; justify-content: center; text-align: center;
-    box-sizing: border-box; border: 1px dashed var(--panel-border); background: #100e1a;
-  }
-  .result-poster-placeholder span { font-size: 0.6rem; font-weight: 600; line-height: 1.15; color: var(--text-dim); }
-  .loading-row { display: flex; align-items: center; gap: 10px; }
-  .spinner {
-    width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%;
-    border: 2px solid var(--panel-border); border-top-color: var(--accent);
-    animation: spin 0.7s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner { animation: none; border-top-color: var(--panel-border); }
-  }
-  .pull-refresh-indicator {
-    position: fixed;
-    top: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--accent);
-    background: var(--panel);
-    border: 1px solid var(--panel-border);
-    border-radius: 50%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-    opacity: 0;
-    z-index: 200;
-    pointer-events: none;
-    transition: opacity 0.25s ease;
-  }
+  .hero-bg { position: absolute; inset: 0; z-index: -2; }
+  .hero-bg img { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
+  .hero-bg.fallback img { filter: blur(30px) saturate(140%); transform: scale(1.3); opacity: 0.6; }
+  .hero::before { content: ""; position: absolute; inset: 0; z-index: -1;
+    background:
+      linear-gradient(90deg, rgba(11,10,15,0.96) 0%, rgba(11,10,15,0.75) 38%, rgba(11,10,15,0.15) 75%),
+      linear-gradient(0deg, rgba(11,10,15,0.95) 0%, rgba(11,10,15,0) 55%); }
+  .hero::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0.35;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 3px); }
+  .hero-content { display: flex; align-items: flex-end; gap: 28px; padding: 40px; width: 100%; animation: fade-up 0.5s ease both; }
+  .hero-poster { width: 170px; aspect-ratio: 2/3; object-fit: cover; border-radius: 12px; flex-shrink: 0;
+    box-shadow: 0 24px 50px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.1); }
+  .hero-text { min-width: 0; max-width: 640px; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 700 0.7rem var(--font-body); letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); }
+  .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .hero-title { font: 400 clamp(2.6rem, 6vw, 4.6rem)/0.92 var(--font-display); letter-spacing: 0.02em; margin: 12px 0 14px; text-wrap: balance; }
+  .hero-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 18px; }
+  .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .rd-mini { display: flex; flex-wrap: wrap; gap: 14px; }
+  .rd-mini .acc { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-dim); }
+  .rd-mini .acc b { color: var(--text); font-weight: 600; }
+
+  .shelf-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  .shelf-title { font: 400 2.1rem/1 var(--font-display); letter-spacing: 0.04em; margin: 0; }
+  .shelf-title .count { color: var(--text-mute); font-size: 1.4rem; margin-left: 6px; }
+  .shelf-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 22px; }
+  .shelf-tools .input-icon { flex: 1 1 260px; max-width: 420px; }
+  .filters { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; min-width: 0; max-width: 100%; }
+  .filters::-webkit-scrollbar { display: none; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 28px 20px; }
+  .tape { all: unset; cursor: pointer; display: block; min-width: 0; animation: fade-up 0.45s ease both; animation-delay: calc(var(--i, 0) * 35ms); }
+  .tape-poster { position: relative; aspect-ratio: 2/3; border-radius: 12px; overflow: hidden; background: var(--surface-2);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 10px 30px -14px rgba(0,0,0,0.9);
+    transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s; }
+  .tape-poster img { width: 100%; height: 100%; object-fit: cover; }
+  .tape-poster::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0,0,0,0.75), transparent 45%); opacity: 0; transition: opacity 0.25s; }
+  .tape:hover .tape-poster, .tape:focus-visible .tape-poster { transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 0 0 2px var(--accent), 0 0 28px -4px var(--accent-glow), 0 22px 40px -16px rgba(0,0,0,0.9); }
+  .tape:hover .tape-poster::after { opacity: 1; }
+  .tape-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 14px; text-align: center;
+    background: radial-gradient(circle at 50% 30%, var(--surface-3), var(--surface)); color: var(--text-mute);
+    font: 400 1.4rem/1 var(--font-display); letter-spacing: 0.04em; }
+  .tape-badge { position: absolute; top: 9px; left: 9px; z-index: 2; display: inline-flex; align-items: center; gap: 5px;
+    height: 24px; padding: 0 9px; border-radius: 999px; font: 700 0.68rem/1 var(--font-body); letter-spacing: 0.03em;
+    background: rgba(11,10,15,0.78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); }
+  .tape-badge.ready { color: var(--ok); }
+  .tape-badge.downloading { color: var(--gold); }
+  .tape-badge.none { color: var(--text-dim); }
+  .tape-type { position: absolute; top: 9px; right: 9px; z-index: 2; }
+  .tape-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; z-index: 2; background: rgba(0,0,0,0.5); }
+  .tape-progress span { display: block; height: 100%; background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+  .tape-title { margin-top: 11px; font-weight: 600; font-size: 0.92rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tape-sub { margin-top: 3px; font-size: 0.76rem; color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty-state { text-align: center; padding: 70px 20px; color: var(--text-dim); border: 1px dashed var(--line-strong); border-radius: 18px; }
+  .empty-state .big { font: 400 2rem/1 var(--font-display); letter-spacing: 0.04em; color: var(--text); margin: 14px 0 8px; }
+  .empty-state .icon { margin: 0 auto; color: var(--accent); }
+
+  /* ── Ficha (modal en escritorio, hoja inferior en móvil) ── */
+  .sheet-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; padding: 24px;
+    background: rgba(5,4,8,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .sheet-overlay.open { display: flex; }
+  .sheet { position: relative; width: 100%; max-width: 760px; max-height: calc(100vh - 48px); overflow-y: auto;
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 40px 80px -20px rgba(0,0,0,0.9);
+    animation: fade-up 0.25s ease both; }
+  .sheet-hero { position: relative; height: 260px; background: var(--surface); }
+  .sheet-hero img { width: 100%; height: 100%; object-fit: cover; }
+  .sheet-hero.fallback img { filter: blur(26px) saturate(140%); transform: scale(1.2); opacity: 0.55; }
+  .sheet-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--bg-2) 0%, rgba(17,15,23,0.2) 60%, rgba(17,15,23,0.4) 100%); }
+  .sheet-close { position: absolute; top: 14px; right: 14px; z-index: 3; background: rgba(11,10,15,0.6); backdrop-filter: blur(8px); }
+  .sheet-body { position: relative; padding: 0 32px 32px; margin-top: -120px; z-index: 2; }
+  .sheet-top { display: flex; gap: 24px; align-items: flex-end; }
+  .sheet-poster { width: 140px; aspect-ratio: 2/3; object-fit: cover; border-radius: 12px; flex-shrink: 0; background: var(--surface-2);
+    box-shadow: 0 20px 40px -12px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.1); }
+  .sheet-title { font: 400 2.6rem/0.95 var(--font-display); letter-spacing: 0.02em; margin: 0 0 12px; }
+  .sheet-section { margin-top: 28px; }
+  .sheet-section h4 { margin: 0 0 12px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-mute); }
+  .rd-list { display: grid; gap: 10px; }
+  .rd-item { display: grid; grid-template-columns: 90px 1fr auto; align-items: center; gap: 14px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 0.86rem; }
+  .rd-item .name { font-weight: 600; }
+  .rd-item .state { min-width: 64px; white-space: nowrap; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+  .rd-item .state.ready { color: var(--ok); }
+  .rd-item.missing .state, .rd-item.nokey .state { color: var(--text-mute); font-weight: 500; }
+  .rd-item.missing .name, .rd-item.nokey .name { color: var(--text-dim); }
+  .rd-item.nokey { border-style: dashed; }
+  .sheet-video { display: none; }
+  .sheet-play { position: absolute; z-index: 3; left: 50%; top: 42%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; padding-left: 4px; cursor: pointer; color: #fff;
+    background: rgba(255,61,87,0.9); border: 0; box-shadow: 0 0 0 8px rgba(255,61,87,0.2), 0 10px 30px -6px var(--accent-glow); transition: transform 0.15s, background 0.15s; }
+  .sheet-play:hover { transform: translate(-50%, -50%) scale(1.08); background: var(--accent); }
+  .sheet-play .icon { fill: currentColor; }
+  .sheet.playing .sheet-hero { height: auto; aspect-ratio: 16 / 9; background: #000; }
+  .sheet.playing .sheet-hero::after, .sheet.playing .sheet-hero > img, .sheet.playing .sheet-play { display: none; }
+  .sheet.playing .sheet-video { display: block; position: absolute; inset: 0; }
+  .sheet-video iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .sheet.playing .sheet-body { margin-top: 0; padding-top: 24px; }
+  .sheet-genres { margin-top: 10px; font-size: 0.82rem; color: var(--text-dim); }
+  .sheet-tagline { margin: 0 0 8px; font-style: italic; color: var(--text); font-size: 0.92rem; }
+  .sheet-overview { color: var(--text-dim); font-size: 0.92rem; line-height: 1.65; max-width: 640px; }
+  .bar { height: 6px; background: var(--bg); border-radius: 999px; overflow: hidden; }
+  .bar span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--gold), #ffd98a); }
+  .bar span.ready { background: linear-gradient(90deg, #22b866, var(--ok)); }
+  .hash-row { display: flex; gap: 10px; align-items: center; padding: 6px 6px 6px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .hash-row code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 0.8rem ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); }
+  .sheet-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 30px; }
+  .sheet-actions .grow { flex: 1; }
+  .confirm { display: none; margin-top: 18px; padding: 18px; border-radius: var(--radius); background: var(--err-soft); border: 1px solid rgba(255,107,129,0.3); }
+  .confirm.open { display: block; animation: fade-up 0.2s ease both; }
+  .confirm p { margin: 0 0 14px; color: #ffc0ca; font-size: 0.9rem; }
+  .confirm .row { display: flex; gap: 10px; justify-content: flex-end; }
+
+  .pull-refresh-indicator { position: fixed; top: calc(14px + var(--safe-t)); left: 50%; transform: translateX(-50%); width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center; color: var(--accent); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 50%; box-shadow: 0 4px 14px rgba(0,0,0,0.4); opacity: 0; z-index: 200; pointer-events: none; transition: opacity 0.25s ease; }
   .pull-refresh-indicator.visible { opacity: 1; }
-  .pull-refresh-indicator #pull-refresh-icon { transition: transform 0.15s ease; }
-  .pull-refresh-indicator.spinning #pull-refresh-icon { animation: spin 0.7s linear infinite; }
+  .pull-refresh-indicator .icon { transition: transform 0.15s ease; }
+  .pull-refresh-indicator.spinning .icon { animation: spin 0.7s linear infinite; }
   #main-wrap { transition: transform 0.25s ease; }
-  @media (prefers-reduced-motion: reduce) {
-    .pull-refresh-indicator { transition: none; }
-    .pull-refresh-indicator.spinning #pull-refresh-icon { animation: none; }
-    #main-wrap { transition: none; }
+
+  @media (max-width: 760px) {
+    main { padding: 0 16px calc(var(--bottomnav-h) + var(--safe-b) + 32px); }
+    .hero { margin: 14px 0 28px; min-height: 0; border-radius: 18px; }
+    .hero-content { flex-direction: column; align-items: flex-start; gap: 18px; padding: 120px 20px 22px; }
+    .hero-poster { width: 108px; }
+    .hero::before { background: linear-gradient(0deg, rgba(11,10,15,0.98) 0%, rgba(11,10,15,0.7) 55%, rgba(11,10,15,0.1) 100%); }
+    .hero-actions .btn { flex: 1; }
+    .shelf-title { font-size: 1.8rem; }
+    .shelf-tools .input-icon { max-width: none; flex-basis: 100%; }
+    .filters { flex: 1 1 100%; max-width: none; margin: 0 -16px; padding: 2px 16px; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 20px 12px; }
+    .tape-title { font-size: 0.82rem; }
+    .tape-badge { top: 6px; left: 6px; height: 21px; padding: 0 7px; font-size: 0.62rem; }
+    .tape-type { top: 6px; right: 6px; }
+    .sheet-overlay { padding: 0; align-items: flex-end; }
+    .sheet { max-height: 92vh; border-radius: 22px 22px 0 0; border-bottom: 0; padding-bottom: var(--safe-b); }
+    .sheet-hero { height: 190px; }
+    .sheet-body { padding: 0 18px 24px; margin-top: -90px; }
+    .sheet-top { gap: 16px; }
+    .sheet-poster { width: 96px; }
+    .sheet-title { font-size: 2rem; }
+    .rd-item { grid-template-columns: 70px 1fr auto; gap: 10px; padding: 11px 13px; }
+    .sheet-actions .btn { flex: 1; }
   }
 `;
 }
@@ -312,236 +234,449 @@ function formatRdEntry(entry) {
     return { pct: 0, label: entry.status || "?" };
 }
 
-function renderMovieList(imdbStreams, rdMaps) {
-    const entries = Object.entries(imdbStreams);
-    if (entries.length === 0) {
-        return `<p class="empty">Todavía no hay ninguna película añadida.</p>`;
-    }
-    return `<ul class="movie-list" id="movie-list">${entries.map(([imdbId, s]) => {
-        const name = escapeHtml(s.name || s.title || imdbId);
-        const searchKey = `${s.name || ""} ${s.title || ""} ${imdbId}`.toLowerCase();
-        const poster = s.poster
-            ? `<img class="poster" src="${escapeHtml(s.poster)}" alt="" loading="lazy">`
-            : `<div class="poster poster-placeholder">🎬</div>`;
-        const hasTrackers = Array.isArray(s.sources) && s.sources.length > 0;
-        const trackerBadge = hasTrackers
-            ? `<span class="tracker-badge" title="El magnet incluye trackers propios">torrent</span>`
-            : `<span class="tracker-badge" title="Magnet sin trackers: puede fallar en Real-Debrid con trackers privados">magnet</span>`;
-        const typeLabel = s.type === "series" ? "Serie" : "Película";
+// Las portadas de Cinemeta (metahub) vienen en tamaño "small"; para la
+// cuadrícula y la ficha se pide la "medium", y el fondo se saca del mismo
+// servicio a partir del id de IMDb.
+function posterHd(poster) {
+    return poster ? String(poster).replace("/poster/small/", "/poster/medium/") : null;
+}
 
-        const hashKey = (s.infoHash || "").toLowerCase();
-        const rdRows = RD_ACCOUNTS.map((acc) => {
-            const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
-            if (!info) return "";
-            const body = info.pct === 100
-                ? `<span class="ready-check">✓ listo</span>`
-                : `<div class="rd-bar"><div class="rd-bar-fill" style="width:${info.pct}%"></div></div>
-                <span class="rd-pct">${escapeHtml(info.label)}</span>`;
-            return `<div class="rd-row">
-                <span class="rd-name">${escapeHtml(acc.id)}</span>
-                ${body}
-            </div>`;
-        }).join("");
+function backdropFor(imdbId) {
+    return `https://images.metahub.space/background/medium/${encodeURIComponent(imdbId)}/img`;
+}
 
-        return `<li class="movie-item" data-search="${escapeHtml(searchKey)}">
-            ${poster}
-            <div class="info">
-                <div class="name">${name}</div>
-                <div class="sub">${escapeHtml(imdbId)} · ${typeLabel} · ${trackerBadge}</div>
-                <div class="sub mono">${escapeHtml(s.infoHash)}</div>
-                ${rdRows}
-            </div>
-            <div class="actions">
-                <a class="btn btn-edit" href="/admin/add?edit=${encodeURIComponent(imdbId)}">Editar</a>
-                <form method="POST" action="/admin" class="delete-form">
-                    <input type="hidden" name="imdbId" value="${escapeHtml(imdbId)}">
-                    <input type="hidden" name="action" value="delete">
-                    <button type="button" class="btn btn-delete delete-trigger" data-name="${name}">Eliminar</button>
-                </form>
-            </div>
-        </li>`;
-    }).join("")}</ul>
-    <p class="empty" id="no-results" style="display:none">No hay ninguna película que coincida con la búsqueda.</p>
-    <div class="pagination" id="pagination"></div>`;
+// Resumen de estado en RD de una película: por cuenta y global
+// ("ready" si todas las cuentas que la tienen la han descargado,
+// "downloading" si alguna va por la mitad, "none" si no está en ninguna).
+// "all" lleva siempre las tres cuentas para la ficha: "ok" si la tiene,
+// "missing" si no la tiene y "nokey" si en este entorno no hay API key
+// de esa cuenta (p. ej. en local) y por tanto no se puede saber.
+function rdSummary(entry, rdMaps) {
+    const hashKey = (entry.infoHash || "").toLowerCase();
+    const all = RD_ACCOUNTS.map((acc) => {
+        if (!process.env[acc.envVar]) return { id: acc.id, state: "nokey", pct: 0, label: "Sin clave" };
+        const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
+        return info
+            ? { id: acc.id, state: "ok", pct: info.pct, label: info.label }
+            : { id: acc.id, state: "missing", pct: 0, label: "No añadida" };
+    });
+    const accounts = all.filter((a) => a.state === "ok");
+    if (accounts.length === 0) return { all, accounts, status: "none", pct: 0 };
+    const minPct = Math.min(...accounts.map((a) => a.pct));
+    return { all, accounts, status: minPct === 100 ? "ready" : "downloading", pct: minPct };
+}
+
+function statusBadge(summary) {
+    if (summary.status === "ready") return `<span class="tape-badge ready">${icon("check", 12)} En RD</span>`;
+    if (summary.status === "downloading") return `<span class="tape-badge downloading">${icon("download", 12)} ${summary.pct}%</span>`;
+    return `<span class="tape-badge none">Sin RD</span>`;
 }
 
 function renderListPage({ message, imdbStreams, rdMaps }) {
+    const entries = Object.entries(imdbStreams);
+    const items = entries.map(([imdbId, s]) => {
+        const summary = rdSummary(s, rdMaps);
+        return {
+            id: imdbId,
+            name: s.name || s.title || imdbId,
+            title: s.title || "",
+            type: s.type === "series" ? "series" : "movie",
+            poster: posterHd(s.poster),
+            backdrop: backdropFor(imdbId),
+            infoHash: s.infoHash || "",
+            hasTrackers: Array.isArray(s.sources) && s.sources.length > 0,
+            rd: summary.all,
+            status: summary.status,
+            pct: summary.pct,
+        };
+    });
+
+    const counts = {
+        all: items.length,
+        movie: items.filter((i) => i.type === "movie").length,
+        series: items.filter((i) => i.type === "series").length,
+        ready: items.filter((i) => i.status === "ready").length,
+        downloading: items.filter((i) => i.status === "downloading").length,
+        none: items.filter((i) => i.status === "none").length,
+    };
+
+    // La última del JSON es la última añadida (se insertan al final).
+    const latest = items[items.length - 1];
+    const hero = latest ? `
+    <section class="hero" aria-label="Recién añadida">
+      <div class="hero-bg" id="hero-bg">
+        <img src="${escapeHtml(latest.backdrop)}" alt="" onerror="this.onerror=null;this.parentNode.classList.add('fallback');this.src=${escapeHtml(JSON.stringify(latest.poster || ""))}">
+      </div>
+      <div class="hero-content">
+        ${latest.poster ? `<img class="hero-poster" src="${escapeHtml(latest.poster)}" alt="">` : ""}
+        <div class="hero-text">
+          <span class="eyebrow">Recién añadida</span>
+          <h1 class="hero-title">${escapeHtml(latest.name)}</h1>
+          <div class="hero-meta">
+            <span class="tag">${latest.type === "series" ? "Serie" : "Película"}</span>
+            <span class="tag">${escapeHtml(latest.id)}</span>
+            <span class="tag ${latest.hasTrackers ? "accent" : ""}">${latest.hasTrackers ? "Torrent" : "Magnet"}</span>
+          </div>
+          ${latest.status !== "none" ? `<div class="rd-mini">${latest.rd.filter((a) => a.state === "ok").map((a) => `<span class="acc">${a.pct === 100 ? `<span style="color:var(--ok)">${icon("check", 14)}</span>` : `<span style="color:var(--gold)">${icon("download", 14)}</span>`}<b>${escapeHtml(a.id)}</b> ${escapeHtml(a.label)}</span>`).join("")}</div>` : `<div class="rd-mini"><span class="acc">Aún no está en ninguna cuenta de Real-Debrid</span></div>`}
+          <div class="hero-actions">
+            <button type="button" class="btn btn-primary" data-open="${escapeHtml(latest.id)}">${icon("eye", 18)} Ver ficha</button>
+            <a class="btn btn-ghost" href="/admin/add?edit=${encodeURIComponent(latest.id)}">${icon("edit", 17)} Editar</a>
+          </div>
+        </div>
+      </div>
+    </section>` : "";
+
+    const grid = items.length === 0
+        ? `<div class="empty-state">
+            ${icon("film", 44)}
+            <div class="big">El videoclub está vacío</div>
+            <p>Añade tu primera película para que aparezca en Stremio.</p>
+            <a class="btn btn-primary" href="/admin/add" style="margin-top:10px">${icon("plus", 18)} Añadir película</a>
+          </div>`
+        : `<div class="grid" id="grid">${items.slice().reverse().map((it, i) => `
+          <button type="button" class="tape" data-open="${escapeHtml(it.id)}" data-type="${it.type}" data-status="${it.status}"
+            data-search="${escapeHtml(`${it.name} ${it.title} ${it.id}`.toLowerCase())}" style="--i:${Math.min(i, 20)}" aria-label="${escapeHtml(it.name)}">
+            <div class="tape-poster">
+              ${it.poster
+                ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tape-placeholder" style="display:none">${icon("film", 30)}${escapeHtml(it.name)}</div>`
+                : `<div class="tape-placeholder">${icon("film", 30)}${escapeHtml(it.name)}</div>`}
+              ${statusBadge({ status: it.status, pct: it.pct })}
+              ${it.type === "series" ? `<span class="tag accent tape-type">Serie</span>` : ""}
+              ${it.status === "downloading" ? `<div class="tape-progress"><span style="width:${it.pct}%"></span></div>` : ""}
+            </div>
+            <div class="tape-title">${escapeHtml(it.name)}</div>
+            <div class="tape-sub">${it.type === "series" ? "Serie" : "Película"} · ${escapeHtml(it.id)}</div>
+          </button>`).join("")}
+        </div>
+        <div class="empty-state" id="no-results" style="display:none">
+          ${icon("search", 40)}
+          <div class="big">Nada por aquí</div>
+          <p>Ninguna película coincide con la búsqueda o el filtro.</p>
+        </div>`;
+
+    const filterChip = (key, label) => counts[key] || key === "all"
+        ? `<button type="button" class="chip${key === "all" ? " active" : ""}" data-filter="${key}">${label} <span class="count">${counts[key]}</span></button>`
+        : "";
+
+    // Datos de cada película para pintar la ficha en cliente. Se escapa "<"
+    // para que ningún título pueda cerrar la etiqueta <script>.
+    const itemsJson = JSON.stringify(items).replace(/</g, "\\u003c");
+
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/icon.png">
-<link rel="manifest" href="/site.webmanifest">
-<link rel="apple-touch-icon" href="/icon.png">
-<meta name="theme-color" content="#7b5bf0">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FilmRD">
-<title>Admin · JFuster RD</title>
-<style>${baseStyles()}</style>
+${headTags("Biblioteca · JFuster RD")}
+<style>${themeCss()}${libraryStyles()}</style>
 </head>
 <body>
-  <div id="pull-refresh-indicator" class="pull-refresh-indicator">
-    <svg id="pull-refresh-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="23 4 23 10 17 10"></polyline>
-      <polyline points="1 20 1 14 7 14"></polyline>
-      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"></path>
-    </svg>
+  <div id="pull-refresh-indicator" class="pull-refresh-indicator">${icon("refresh", 18)}</div>
+  ${renderTopBar("library")}
+  <div id="main-wrap">
+  <main>
+    ${message ? `<div style="margin-top:20px">${message}</div>` : ""}
+    ${hero}
+
+    <section id="buscar">
+      <div class="shelf-head">
+        <h2 class="shelf-title">Tu videoclub <span class="count" id="movie-count">${items.length}</span></h2>
+      </div>
+      ${items.length ? `<div class="shelf-tools">
+        <div class="input-icon">
+          ${icon("search", 18)}
+          <input class="input" id="search" type="search" placeholder="Buscar por título o id de IMDb..." autocomplete="off">
+        </div>
+        <div class="filters" role="toolbar" aria-label="Filtros">
+          ${filterChip("all", "Todas")}
+          ${counts.series ? filterChip("movie", "Películas") : ""}
+          ${filterChip("series", "Series")}
+          ${filterChip("ready", "Listas en RD")}
+          ${filterChip("downloading", "Descargando")}
+          ${filterChip("none", "Sin RD")}
+        </div>
+      </div>` : ""}
+      ${grid}
+    </section>
+  </main>
   </div>
-  <div class="wrap" id="main-wrap">
-    <header>
-      <div class="header-row">
-        <div class="header-left">
-          <img src="/icon.png" alt="">
-          <div>
-            <h1>JFuster RD</h1>
-            <p>Panel de administración</p>
+
+  ${renderBottomNav("library")}
+
+  <div class="sheet-overlay" id="sheet-overlay">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-hero" id="sheet-hero">
+        <img id="sheet-backdrop" alt="">
+        <div class="sheet-video" id="sheet-video"></div>
+        <button type="button" class="sheet-play" id="sheet-play" aria-label="Ver tráiler">${icon("play", 26)}</button>
+        <button type="button" class="icon-btn sheet-close" id="sheet-close" aria-label="Cerrar">${icon("x", 18)}</button>
+      </div>
+      <div class="sheet-body">
+        <div class="sheet-top">
+          <img class="sheet-poster" id="sheet-poster" alt="">
+          <div style="min-width:0">
+            <h3 class="sheet-title" id="sheet-title"></h3>
+            <div class="hero-meta" id="sheet-tags" style="margin:0"></div>
           </div>
         </div>
-        <div style="display:flex; align-items:center; gap:14px;">
-          <a href="/login?logout=1" class="btn btn-neon-red">Cerrar sesión</a>
-          <a href="/admin/add" class="btn btn-neon-purple">+ Añadir película</a>
+        <div class="sheet-section">
+          <h4>Sinopsis</h4>
+          <p class="sheet-tagline" id="sheet-tagline"></p>
+          <div class="sheet-overview" id="sheet-overview"></div>
         </div>
-      </div>
-    </header>
-
-    ${message || ""}
-
-    <section class="card">
-      <h2>Películas (<span id="movie-count">${Object.keys(imdbStreams).length}</span>)</h2>
-      <div class="search-wrap">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <input id="search" placeholder="Buscar por título o id de IMDb..." autocomplete="off">
-      </div>
-      ${renderMovieList(imdbStreams, rdMaps)}
-    </section>
-  </div>
-
-  <div class="modal-overlay" id="delete-modal-overlay">
-    <div class="modal">
-      <h3>Eliminar película</h3>
-      <p id="delete-modal-text"></p>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-cancel" id="delete-modal-cancel">Cancelar</button>
-        <button type="button" class="btn btn-delete" id="delete-modal-confirm">Eliminar</button>
+        <div class="sheet-section">
+          <h4>Real-Debrid</h4>
+          <div class="rd-list" id="sheet-rd"></div>
+        </div>
+        <div class="sheet-section">
+          <h4>InfoHash</h4>
+          <div class="hash-row"><code id="sheet-hash"></code><button type="button" class="btn btn-ghost" id="sheet-copy">${icon("copy", 16)} Copiar</button></div>
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="btn btn-primary" id="sheet-trailer" style="display:none">${icon("play", 17)} Tráiler</button>
+          <a class="btn btn-ghost grow" id="sheet-edit" href="#">${icon("edit", 17)} Editar copia</a>
+          <a class="btn btn-ghost" id="sheet-imdb" href="#" target="_blank" rel="noopener">IMDb</a>
+          <button type="button" class="btn btn-danger" id="sheet-delete">${icon("trash", 17)} Eliminar</button>
+        </div>
+        <div class="confirm" id="sheet-confirm">
+          <p id="sheet-confirm-text"></p>
+          <div class="row">
+            <button type="button" class="btn btn-ghost" id="sheet-confirm-cancel">Cancelar</button>
+            <button type="button" class="btn btn-danger solid" id="sheet-confirm-ok">${icon("trash", 17)} Sí, eliminar</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
+  <form method="POST" action="/admin" id="delete-form" style="display:none">
+    <input type="hidden" name="imdbId" id="delete-id">
+    <input type="hidden" name="action" value="delete">
+  </form>
+
+  <script id="library-data" type="application/json">${itemsJson}</script>
   <script>
-    // Recarga si la página vuelve del bfcache (típico al reabrir la PWA
-    // desde el icono tras dejarla en segundo plano): sin esto, el usuario
-    // ve la versión que tenía cargada la última vez, no la actual.
-    window.addEventListener('pageshow', function (e) {
-      if (e.persisted) location.reload();
-    });
+    ${BFCACHE_RELOAD_SCRIPT}
+
+    // ── Búsqueda y filtros de la cuadrícula ──
     (function () {
-      var overlay = document.getElementById('delete-modal-overlay');
-      var textEl = document.getElementById('delete-modal-text');
-      var cancelBtn = document.getElementById('delete-modal-cancel');
-      var confirmBtn = document.getElementById('delete-modal-confirm');
-      var pendingForm = null;
-
-      function openModal(form, name) {
-        pendingForm = form;
-        textEl.textContent = 'Vas a eliminar "' + name + '" del addon. Esta acción no se puede deshacer.';
-        overlay.classList.add('open');
-        confirmBtn.focus();
-      }
-
-      function closeModal() {
-        overlay.classList.remove('open');
-        pendingForm = null;
-      }
-
-      function confirmDelete() {
-        if (!pendingForm) return;
-        pendingForm.submit();
-      }
-
-      document.querySelectorAll('.delete-trigger').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          openModal(btn.closest('form'), btn.dataset.name);
-        });
-      });
-
-      cancelBtn.addEventListener('click', closeModal);
-      overlay.addEventListener('click', function (e) {
-        if (e.target === overlay) closeModal();
-      });
-      confirmBtn.addEventListener('click', confirmDelete);
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
-      });
-    })();
-
-    (function () {
-      var PAGE_SIZE = 8;
-      var currentPage = 1;
-      var allItems = Array.prototype.slice.call(document.querySelectorAll('#movie-list .movie-item'));
+      var tapes = Array.prototype.slice.call(document.querySelectorAll('#grid .tape'));
       var searchInput = document.getElementById('search');
       var noResults = document.getElementById('no-results');
-      var paginationEl = document.getElementById('pagination');
       var countEl = document.getElementById('movie-count');
+      var chips = document.querySelectorAll('[data-filter]');
+      var navSearch = document.getElementById('nav-search');
+      var filter = 'all';
 
-      if (allItems.length === 0) return;
+      if (navSearch) navSearch.addEventListener('click', function () {
+        if (!searchInput) return;
+        document.getElementById('buscar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(function () { searchInput.focus(); }, 300);
+      });
+      if (!tapes.length) return;
 
-      function getFiltered() {
+      function matches(t) {
+        if (filter === 'movie' || filter === 'series') { if (t.dataset.type !== filter) return false; }
+        else if (filter !== 'all' && t.dataset.status !== filter) return false;
         var q = (searchInput.value || '').trim().toLowerCase();
-        if (!q) return allItems;
-        return allItems.filter(function (item) {
-          return item.dataset.search.indexOf(q) !== -1;
-        });
+        return !q || t.dataset.search.indexOf(q) !== -1;
       }
 
       function render() {
-        var filtered = getFiltered();
-        var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-        if (currentPage > totalPages) currentPage = totalPages;
-
-        allItems.forEach(function (item) { item.style.display = 'none'; });
-
-        var start = (currentPage - 1) * PAGE_SIZE;
-        filtered.slice(start, start + PAGE_SIZE).forEach(function (item) {
-          item.style.display = 'flex';
+        var shown = 0;
+        tapes.forEach(function (t) {
+          var ok = matches(t);
+          t.style.display = ok ? '' : 'none';
+          if (ok) shown++;
         });
-
-        noResults.style.display = filtered.length === 0 ? 'block' : 'none';
-        countEl.textContent = filtered.length;
-
-        paginationEl.innerHTML = '';
-        if (totalPages > 1) {
-          var prev = document.createElement('button');
-          prev.type = 'button';
-          prev.textContent = '‹';
-          prev.disabled = currentPage === 1;
-          prev.addEventListener('click', function () { currentPage--; render(); });
-
-          var label = document.createElement('span');
-          label.textContent = 'Página ' + currentPage + ' / ' + totalPages;
-
-          var next = document.createElement('button');
-          next.type = 'button';
-          next.textContent = '›';
-          next.disabled = currentPage === totalPages;
-          next.addEventListener('click', function () { currentPage++; render(); });
-
-          paginationEl.appendChild(prev);
-          paginationEl.appendChild(label);
-          paginationEl.appendChild(next);
-        }
+        countEl.textContent = shown;
+        noResults.style.display = shown ? 'none' : 'block';
       }
 
-      searchInput.addEventListener('input', function () {
-        currentPage = 1;
-        render();
+      chips.forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          chips.forEach(function (c) { c.classList.remove('active'); });
+          chip.classList.add('active');
+          filter = chip.dataset.filter;
+          render();
+        });
+      });
+      searchInput.addEventListener('input', render);
+      if (location.hash === '#buscar') setTimeout(function () { searchInput.focus(); }, 200);
+    })();
+
+    // ── Ficha de detalle + eliminar ──
+    (function () {
+      var items = JSON.parse(document.getElementById('library-data').textContent);
+      var byId = {};
+      items.forEach(function (it) { byId[it.id] = it; });
+      var overlay = document.getElementById('sheet-overlay');
+      var hero = document.getElementById('sheet-hero');
+      var backdrop = document.getElementById('sheet-backdrop');
+      var confirmBox = document.getElementById('sheet-confirm');
+      var current = null;
+      var lastFocus = null;
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      function open(id) {
+        var it = byId[id];
+        if (!it) return;
+        current = it;
+        lastFocus = document.activeElement;
+        hero.classList.remove('fallback');
+        backdrop.onerror = function () { backdrop.onerror = null; hero.classList.add('fallback'); backdrop.src = it.poster || ''; };
+        backdrop.src = it.backdrop;
+        var poster = document.getElementById('sheet-poster');
+        poster.src = it.poster || '';
+        poster.style.visibility = it.poster ? 'visible' : 'hidden';
+        document.getElementById('sheet-title').textContent = it.name;
+        document.getElementById('sheet-tags').innerHTML =
+          '<span class="tag">' + (it.type === 'series' ? 'Serie' : 'Película') + '</span>' +
+          '<span class="tag">' + esc(it.id) + '</span>' +
+          '<span class="tag' + (it.hasTrackers ? ' accent' : '') + '">' + (it.hasTrackers ? 'Torrent con trackers' : 'Magnet sin trackers') + '</span>';
+        document.getElementById('sheet-rd').innerHTML = it.rd.map(function (a) {
+          var ready = a.state === 'ok' && a.pct === 100;
+          var title = a.state === 'nokey' ? ' title="No hay API key de esta cuenta en este entorno"' : '';
+          return '<div class="rd-item ' + a.state + '"' + title + '><span class="name">' + esc(a.id) + '</span>' +
+            '<div class="bar"><span class="' + (ready ? 'ready' : '') + '" style="width:' + a.pct + '%"></span></div>' +
+            '<span class="state' + (ready ? ' ready' : '') + '">' + (ready ? '✓ Listo' : esc(a.label)) + '</span></div>';
+        }).join('');
+        loadDetails(it);
+        document.getElementById('sheet-hash').textContent = it.infoHash;
+        document.getElementById('sheet-edit').href = '/admin/add?edit=' + encodeURIComponent(it.id);
+        document.getElementById('sheet-imdb').href = 'https://www.imdb.com/title/' + encodeURIComponent(it.id) + '/';
+        confirmBox.classList.remove('open');
+        stopTrailer();
+        overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        document.getElementById('sheet-close').focus();
+      }
+
+      // ── Sinopsis, datos y tráiler (TMDB), cargados al abrir la ficha ──
+      var detailsCache = {};
+      var sheetEl = overlay.querySelector('.sheet');
+      var videoEl = document.getElementById('sheet-video');
+      var playBtn = document.getElementById('sheet-play');
+      var trailerBtn = document.getElementById('sheet-trailer');
+
+      function formatRuntime(min) {
+        if (!min) return '';
+        return min >= 60 ? Math.floor(min / 60) + ' h ' + (min % 60 ? (min % 60) + ' min' : '') : min + ' min';
+      }
+
+      function renderDetails(it, d) {
+        if (current !== it) return;
+        var overviewEl = document.getElementById('sheet-overview');
+        var tagline = document.getElementById('sheet-tagline');
+        if (!d) {
+          overviewEl.innerHTML = '<span style="color:var(--text-mute)">No se encontró información en TMDB.</span>';
+          return;
+        }
+        tagline.textContent = d.tagline || '';
+        tagline.style.display = d.tagline ? '' : 'none';
+        overviewEl.textContent = d.overview || 'Sin sinopsis disponible en castellano.';
+        var extra = '';
+        if (d.year) extra += '<span class="tag">' + esc(d.year) + '</span>';
+        if (d.rating) extra += '<span class="tag gold">★ ' + esc(d.rating) + '</span>';
+        if (d.runtime && it.type !== 'series') extra += '<span class="tag">' + esc(formatRuntime(d.runtime)) + '</span>';
+        if (d.seasons) extra += '<span class="tag">' + esc(d.seasons) + (d.seasons === 1 ? ' temporada' : ' temporadas') + '</span>';
+        document.getElementById('sheet-tags').insertAdjacentHTML('beforeend', extra);
+        if (d.genres && d.genres.length) {
+          document.getElementById('sheet-tags').insertAdjacentHTML('afterend',
+            '<div class="sheet-genres" id="sheet-genres">' + d.genres.map(esc).join(' · ') + '</div>');
+        }
+        it._trailer = d.trailerKey || null;
+        playBtn.style.display = it._trailer ? '' : 'none';
+        trailerBtn.style.display = it._trailer ? '' : 'none';
+      }
+
+      function loadDetails(it) {
+        var old = document.getElementById('sheet-genres');
+        if (old) old.remove();
+        document.getElementById('sheet-tagline').style.display = 'none';
+        document.getElementById('sheet-overview').innerHTML =
+          '<div class="skeleton" style="height:14px;border-radius:6px;margin-bottom:8px"></div>' +
+          '<div class="skeleton" style="height:14px;border-radius:6px;margin-bottom:8px;width:92%"></div>' +
+          '<div class="skeleton" style="height:14px;border-radius:6px;width:70%"></div>';
+        playBtn.style.display = 'none';
+        trailerBtn.style.display = 'none';
+        if (detailsCache.hasOwnProperty(it.id)) { renderDetails(it, detailsCache[it.id]); return; }
+        fetch('/api/movie-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imdbId: it.id, type: it.type }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.error) throw new Error(data.error);
+            detailsCache[it.id] = data.details || null;
+            renderDetails(it, detailsCache[it.id]);
+          })
+          .catch(function () {
+            if (current !== it) return;
+            document.getElementById('sheet-overview').innerHTML = '<span style="color:var(--text-mute)">No se pudo cargar la sinopsis ahora mismo.</span>';
+          });
+      }
+
+      function playTrailer() {
+        if (!current || !current._trailer) return;
+        videoEl.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + encodeURIComponent(current._trailer) +
+          '?autoplay=1&rel=0&modestbranding=1" title="Tráiler" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+        sheetEl.classList.add('playing');
+        sheetEl.scrollTop = 0;
+      }
+
+      function stopTrailer() {
+        videoEl.innerHTML = '';
+        sheetEl.classList.remove('playing');
+      }
+
+      playBtn.addEventListener('click', playTrailer);
+      trailerBtn.addEventListener('click', playTrailer);
+
+      function close() {
+        stopTrailer();
+        overlay.classList.remove('open');
+        document.body.style.overflow = '';
+        current = null;
+        if (lastFocus) lastFocus.focus();
+      }
+
+      document.querySelectorAll('[data-open]').forEach(function (el) {
+        el.addEventListener('click', function () { open(el.dataset.open); });
+      });
+      document.getElementById('sheet-close').addEventListener('click', close);
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && overlay.classList.contains('open')) close(); });
+
+      document.getElementById('sheet-copy').addEventListener('click', function () {
+        var btn = this;
+        if (!current || !navigator.clipboard) return;
+        navigator.clipboard.writeText(current.infoHash).then(function () {
+          var old = btn.innerHTML;
+          btn.textContent = '¡Copiado!';
+          setTimeout(function () { btn.innerHTML = old; }, 1400);
+        });
       });
 
-      render();
+      document.getElementById('sheet-delete').addEventListener('click', function () {
+        if (!current) return;
+        document.getElementById('sheet-confirm-text').textContent =
+          'Vas a eliminar "' + current.name + '" del addon. Esta acción no se puede deshacer.';
+        confirmBox.classList.add('open');
+        document.getElementById('sheet-confirm-ok').focus();
+      });
+      document.getElementById('sheet-confirm-cancel').addEventListener('click', function () { confirmBox.classList.remove('open'); });
+      document.getElementById('sheet-confirm-ok').addEventListener('click', function () {
+        if (!current) return;
+        this.innerHTML = '<span class="spinner"></span> Eliminando…';
+        this.disabled = true;
+        document.getElementById('delete-id').value = current.id;
+        document.getElementById('delete-form').submit();
+      });
     })();
 
     // ── Arrastrar hacia abajo para recargar (solo instalada como PWA;
@@ -554,7 +689,7 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
       if (!isStandalone) return;
 
       var indicator = document.getElementById('pull-refresh-indicator');
-      var icon = document.getElementById('pull-refresh-icon');
+      var icon = indicator.querySelector('.icon');
       var content = document.getElementById('main-wrap');
       var revealAt = 18;
       var threshold = 70;
@@ -591,7 +726,7 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
         // touchcancel que el navegador no siempre dispara con claridad),
         // se arranca siempre desde un estado limpio.
         reset();
-        if (atTop()) {
+        if (atTop() && !document.getElementById('sheet-overlay').classList.contains('open')) {
           startY = e.touches[0].clientY;
           pulling = true;
           content.style.transition = 'none';
@@ -635,6 +770,118 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
 </html>`;
 }
 
+// ── Estilos de la página de añadir / editar ─────────────────────────
+function addStyles() {
+    return `
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 40px; }
+  .page-title { font: 400 2.6rem/1 var(--font-display); letter-spacing: 0.04em; margin: 0 0 6px; }
+  .page-sub { color: var(--text-dim); margin: 0 0 26px; }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px; margin-bottom: 20px; }
+  .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .step-num { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font: 400 1.15rem/1 var(--font-display); background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(255,61,87,0.35); flex-shrink: 0; }
+  .step-num.done { background: var(--ok-soft); color: var(--ok); border-color: rgba(61,220,132,0.35); }
+  .step-title { font: 400 1.6rem/1 var(--font-display); letter-spacing: 0.05em; margin: 0; }
+  .step-head .segmented { margin-left: auto; }
+
+  .search-big .input { min-height: 54px; font-size: 1.05rem; border-radius: 14px; }
+  .picks { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 16px; overflow-x: auto; padding: 4px 2px 12px; margin-top: 18px; scroll-snap-type: x mandatory; }
+  .picks:empty { display: none; }
+  .pick { all: unset; cursor: pointer; scroll-snap-align: start; min-width: 0; animation: fade-up 0.35s ease both; animation-delay: calc(var(--i, 0) * 30ms); }
+  .pick-poster { aspect-ratio: 2/3; border-radius: 10px; overflow: hidden; background: var(--surface-2); box-shadow: 0 0 0 1px rgba(255,255,255,0.06); transition: transform 0.2s, box-shadow 0.2s; position: relative; }
+  .pick-poster img { width: 100%; height: 100%; object-fit: cover; }
+  .pick:hover .pick-poster, .pick:focus-visible .pick-poster { transform: translateY(-4px); box-shadow: 0 0 0 2px var(--accent), 0 0 22px -4px var(--accent-glow); }
+  .pick-name { margin-top: 9px; font-weight: 600; font-size: 0.84rem; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .pick-year { font-size: 0.75rem; color: var(--text-mute); margin-top: 2px; }
+  .pick-rating { position: absolute; top: 7px; right: 7px; }
+  .picks-msg { margin-top: 16px; color: var(--text-dim); font-size: 0.9rem; display: flex; align-items: center; gap: 10px; }
+
+  .film { position: relative; display: none; border-radius: 16px; overflow: hidden; isolation: isolate; border: 1px solid rgba(255,255,255,0.06); }
+  .film.show { display: block; animation: fade-up 0.35s ease both; }
+  .film-bg { position: absolute; inset: 0; z-index: -2; }
+  .film-bg img { width: 100%; height: 100%; object-fit: cover; }
+  .film-bg.fallback img { filter: blur(28px) saturate(140%); transform: scale(1.3); opacity: 0.6; }
+  .film::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(23,21,30,0.97) 0%, rgba(23,21,30,0.82) 45%, rgba(23,21,30,0.45) 100%); }
+  .film-inner { display: flex; gap: 22px; padding: 22px; align-items: flex-start; }
+  .film-poster { width: 120px; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px; flex-shrink: 0; background: var(--surface-2); box-shadow: 0 16px 30px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.1); }
+  .film-title { font: 400 2.3rem/0.95 var(--font-display); letter-spacing: 0.02em; margin: 2px 0 10px; }
+  .film-meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  .film-overview { margin: 12px 0 0; color: var(--text-dim); font-size: 0.88rem; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-width: 680px; }
+  .film-change { margin-top: 14px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .toolbar .grow { flex: 1 1 240px; }
+  .toolbar .select { width: auto; min-width: 170px; }
+  .subbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .subbar .label { font-size: 0.8rem; color: var(--text-mute); }
+  .sorts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sorts .chip { min-height: 30px; padding: 0 12px; font-size: 0.78rem; }
+
+  .releases { display: grid; gap: 8px; }
+  .release { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center;
+    padding: 12px 14px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; transition: border-color 0.15s, background 0.15s; animation: fade-up 0.3s ease both; animation-delay: calc(var(--i, 0) * 20ms); }
+  .release:hover { border-color: var(--line-strong); background: #15131c; }
+  .release:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .release.selected { border-color: var(--accent); background: linear-gradient(90deg, var(--accent-soft), transparent 70%); box-shadow: 0 0 0 1px var(--accent), 0 0 24px -10px var(--accent-glow); }
+  .release-thumb { width: 44px; height: 64px; border-radius: 7px; overflow: hidden; background: var(--surface-2); display: flex; align-items: center; justify-content: center; color: var(--text-mute); }
+  .release-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .release-main { min-width: 0; }
+  .release-title { font-size: 0.86rem; font-weight: 500; line-height: 1.35; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .release-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .release-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 7px; font-size: 0.78rem; color: var(--text-dim); }
+  .release-meta .seeds { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
+  .seeds.hot { color: var(--ok); }
+  .seeds.warm { color: var(--gold); }
+  .seeds.cold { color: var(--err); }
+  .release-go { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; height: 34px; padding: 0 12px; border-radius: 999px;
+    font: 600 0.8rem var(--font-body); color: var(--text-dim); border: 1px solid var(--line-strong); gap: 6px; }
+  .release:hover .release-go { color: var(--text); border-color: var(--text-mute); }
+  .release.selected .release-go { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .release-go.err { color: var(--err); border-color: rgba(255,107,129,0.4); }
+  .empty-box { padding: 34px 16px; text-align: center; color: var(--text-dim); font-size: 0.9rem; border: 1px dashed var(--line-strong); border-radius: 12px; }
+  .empty-box .icon { margin: 0 auto 10px; color: var(--text-mute); }
+  .skeleton-row { height: 90px; border-radius: 12px; }
+
+  .savebar { position: sticky; bottom: 16px; z-index: 50; margin-top: 8px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 14px 16px 14px 20px; border-radius: 18px; background: rgba(31,28,40,0.88); backdrop-filter: saturate(160%) blur(18px); -webkit-backdrop-filter: saturate(160%) blur(18px);
+    border: 1px solid var(--line-strong); box-shadow: 0 20px 50px -14px rgba(0,0,0,0.85); }
+  .save-summary { flex: 1 1 220px; min-width: 0; }
+  .save-summary .what { font-weight: 600; font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .save-summary .sub { font-size: 0.78rem; color: var(--text-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rd-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rd-chips .label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mute); margin-right: 4px; }
+  .rd-chips .chip { position: relative; }
+  .save-note { width: 100%; margin: -4px 0 0; font-size: 0.74rem; color: var(--text-mute); }
+  .save-note.local { color: var(--gold); }
+
+  @media (max-width: 760px) {
+    main { padding: 18px 14px calc(var(--bottomnav-h) + var(--safe-b) + 210px); }
+    .page-title { font-size: 2.1rem; }
+    .page-sub { font-size: 0.9rem; margin-bottom: 18px; }
+    .step { padding: 18px 16px; border-radius: 18px; }
+    .step-head .segmented { margin-left: 0; width: 100%; }
+    .step-head .segmented button { flex: 1; justify-content: center; }
+    .picks { grid-auto-columns: 108px; gap: 12px; margin: 16px -16px 0; padding: 4px 16px 12px; }
+    .film-inner { gap: 16px; padding: 16px; }
+    .film-poster { width: 88px; }
+    .film-title { font-size: 1.8rem; }
+    .film-overview { -webkit-line-clamp: 4; }
+    .toolbar .select { flex: 1; }
+    .toolbar .btn { flex: 1; }
+    .release { grid-template-columns: 38px 1fr; gap: 12px; padding: 12px; }
+    .release-thumb { width: 38px; height: 56px; }
+    .release-go { grid-column: 1 / -1; width: 100%; }
+    .release:not(.selected) .release-go { display: none; }
+    .savebar { position: fixed; left: 10px; right: 10px; bottom: calc(var(--bottomnav-h) + var(--safe-b) + 10px); margin: 0; gap: 10px; padding: 12px 14px; }
+    .savebar .btn-primary { width: 100%; }
+    .save-summary { flex-basis: 100%; }
+    .rd-chips .label, .sorts .label, .seg-extra { display: none; }
+    .sorts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; flex: 1 1 100%; margin: 0 -16px; padding: 2px 16px; }
+    .subbar { gap: 10px; }
+  }
+`;
+}
+
 // ── Página de añadir / editar (ficha con portada + búsqueda) ──────
 function renderAddPage({ message, editId, values }) {
     const editing = !!editId;
@@ -643,42 +890,35 @@ function renderAddPage({ message, editId, values }) {
         rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
         prowlarrMode: true,
     }, values || {});
+    const isSeries = v.type === "series";
 
-    const magnetHint = editing
-        ? `Editando ${escapeHtml(editId)}: deja este campo vacío para conservar el stream actual, o elige/pega uno nuevo para sustituirlo.`
+    const manualHint = editing
+        ? `Deja este campo vacío para conservar la copia actual, o pega un magnet nuevo para sustituirla.`
         : "Se extraen el infoHash y los trackers automáticamente.";
+
+    // Ficha inicial: al editar (o al volver de un error al guardar) se
+    // conoce ya la película por su id de IMDb — portada y fondo salen de
+    // metahub —; al añadir de cero se rellena en cliente al elegirla.
+    const knownId = editId || (/^tt[0-9]+$/.test(v.imdbId || "") ? v.imdbId : null);
+    const film = knownId
+        ? {
+            name: v.title,
+            poster: posterHd(v.poster) || `https://images.metahub.space/poster/medium/${encodeURIComponent(knownId)}/img`,
+            backdrop: backdropFor(knownId),
+        }
+        : null;
 
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/icon.png">
-<link rel="manifest" href="/site.webmanifest">
-<link rel="apple-touch-icon" href="/icon.png">
-<meta name="theme-color" content="#7b5bf0">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FilmRD">
-<title>${editing ? "Editar" : "Añadir"} película · JFuster RD</title>
-<style>${baseStyles()}</style>
+${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
+<style>${themeCss()}${addStyles()}</style>
 </head>
 <body>
-  <div class="wrap sheet-wrap">
-    <header>
-      <div class="header-row">
-        <a href="/admin" class="btn btn-neon-purple">← Volver al listado</a>
-        <a href="/login?logout=1" class="btn btn-neon-red">Cerrar sesión</a>
-      </div>
-      <div class="header-row" style="margin-top:10px;">
-        <div class="header-left">
-          <img src="/icon.png" alt="">
-          <div>
-            <h1>${editing ? "Editar película" : "Añadir película"}</h1>
-          </div>
-        </div>
-      </div>
-    </header>
+  ${renderTopBar("add")}
+  <main>
+    <h1 class="page-title">${editing ? "Editar película" : "Añadir al videoclub"}</h1>
+    <p class="page-sub">${editing ? "Cambia la copia o vuelve a cachearla en Real-Debrid." : "Busca la película, elige la mejor copia y guárdala en el catálogo."}</p>
 
     ${message || ""}
 
@@ -686,482 +926,515 @@ function renderAddPage({ message, editId, values }) {
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="prowlarrMode" id="prowlarrModeField" value="${v.prowlarrMode ? "1" : "0"}">
       <input type="hidden" name="imdbId" id="imdbId" value="${escapeHtml(v.imdbId)}">
+      <input type="hidden" name="title" id="title-field" value="${escapeHtml(v.title)}">
       <input type="hidden" name="downloadRef" id="downloadRefField" value="">
+      <input type="hidden" name="type" id="type-field" value="${isSeries ? "series" : "movie"}">
 
-      <div class="sheet">
-        <div class="card">
-          <div class="poster-preview" id="poster-preview">
-            <img id="poster-img" src="${escapeHtml(v.poster)}" alt="" style="display:${v.poster ? "block" : "none"}">
-            <span id="poster-placeholder-text" style="display:${v.poster ? "none" : "block"}">La portada aparecerá aquí al elegir la película</span>
-          </div>
-
-          <label for="movieName">Nombre de la película</label>
-          <div class="autocomplete-wrap">
-            <input id="movieName" name="title" required placeholder="Escribe para buscar en IMDb..."
-              autocomplete="off" value="${escapeHtml(v.title)}"${editing ? " readonly" : ""}>
-            <div class="autocomplete-results" id="imdb-results"></div>
-          </div>
-          <div class="hint-field" id="imdb-hint">${editing ? "La película no se puede cambiar al editar." : "Elige una opción de la lista: se rellena el título y el ID de IMDb automáticamente."}</div>
-
-          <div class="switch-row">
-            <label class="switch">
-              <input type="checkbox" id="prowlarr-mode"${v.prowlarrMode ? " checked" : ""}>
-              <span class="switch-slider"></span>
-            </label>
-            <div>
-              <div class="switch-title">Buscar en Prowlarr</div>
-              <div class="hint-field">Desactiva para pegar el magnet tú mismo</div>
-            </div>
-          </div>
-
-          <div class="switch-row">
-            <label class="switch">
-              <input type="checkbox" id="content-type-switch"${v.type === "series" ? " checked" : ""}>
-              <span class="switch-slider"></span>
-            </label>
-            <div>
-              <div class="switch-title" id="content-type-title">${v.type === "series" ? "Serie" : "Película"}</div>
-              <div class="hint-field">Desliza para buscar una serie en vez de una película</div>
-            </div>
-          </div>
-          <input type="hidden" name="type" id="type-field" value="${escapeHtml(v.type || "movie")}">
-
-          <label>Cachear en Real-Debrid al guardar</label>
-          ${RD_ACCOUNTS.map((acc) => `<label class="checkbox-label"><input type="checkbox" name="rdCache${acc.id}" value="1"${v.rdCache[acc.id] ? " checked" : ""}> RD de ${acc.id}</label>`).join("")}
-
-          <button type="submit" class="btn btn-primary full">Guardar y desplegar</button>
-          <p class="footer-hint">Al guardar se hace un commit al repo y Vercel redespliega (~1 min).</p>
+      <section class="step" id="step-film">
+        <div class="step-head">
+          <span class="step-num${editing ? " done" : ""}" id="step1-num">1</span>
+          <h2 class="step-title">${isSeries ? "La serie" : "La película"}</h2>
+          ${editing ? "" : `<div class="segmented" role="tablist" aria-label="Tipo de contenido">
+            <button type="button" data-type="movie" class="${isSeries ? "" : "active"}">${icon("film", 16)} Película</button>
+            <button type="button" data-type="series" class="${isSeries ? "active" : ""}">${icon("tv", 16)} Serie</button>
+          </div>`}
         </div>
 
-        <div class="card">
-          <label for="magnet">Magnet link</label>
-          <input id="magnet" name="magnet" placeholder="magnet:?xt=urn:btih:..." value="${escapeHtml(v.magnet)}"${editing ? "" : " required"}>
-          <div class="hint-field" id="magnet-hint">${magnetHint}</div>
+        <div id="film-search"${film ? ' style="display:none"' : ""}>
+          <div class="input-icon search-big">
+            ${icon("search", 20)}
+            <input class="input" id="movieSearch" placeholder="${isSeries ? "Busca una serie..." : "Busca una película..."}" autocomplete="off" value="${film ? "" : escapeHtml(v.title)}">
+          </div>
+          <div class="picks" id="picks"></div>
+          <div class="picks-msg" id="picks-msg" style="display:none"></div>
+        </div>
 
-          <div id="prowlarr-panel">
-            <div class="prowlarr-search-row">
-              <div class="field">
-                <input id="prowlarr-query" placeholder="Título a buscar..." autocomplete="off" value="${escapeHtml(v.title)}">
-                <input type="hidden" id="prowlarr-original-query" value="">
-              </div>
-              <select id="prowlarr-indexer">
-                <option value="">Todos los indexers</option>
-                <option value="The Pirate Bay">The Pirate Bay</option>
-                <option value="DivxTotal">DivxTotal</option>
-              </select>
-              <label class="checkbox-label"><input type="checkbox" id="prowlarr-es"> Solo español de España</label>
-              <button type="button" id="prowlarr-search-btn" class="btn btn-edit">Buscar</button>
-            </div>
-            <div class="table-wrap">
-              <table class="results-table">
-                <thead>
-                  <tr>
-                    <th></th><th>Título</th>
-                    <th class="sortable" data-sort="size">Tamaño <span class="sort-arrow"></span></th>
-                    <th class="sortable" data-sort="year">Año <span class="sort-arrow"></span></th>
-                    <th class="sortable" data-sort="seeders">Seeders <span class="sort-arrow"></span></th>
-                    <th>Tipo</th><th>Indexer</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="prowlarr-tbody">
-                  <tr><td colspan="8" class="autocomplete-empty">Escribe un título y pulsa Buscar.</td></tr>
-                </tbody>
-              </table>
+        <div class="film${film ? " show" : ""}" id="film">
+          <div class="film-bg" id="film-bg"><img id="film-backdrop" alt="" src="${film ? escapeHtml(film.backdrop) : ""}" onerror="this.onerror=null;this.parentNode.classList.add('fallback');this.src=document.getElementById('film-poster').src"></div>
+          <div class="film-inner">
+            <img class="film-poster" id="film-poster" alt="" src="${film && film.poster ? escapeHtml(film.poster) : ""}">
+            <div style="min-width:0;flex:1">
+              <h3 class="film-title" id="film-title">${film ? escapeHtml(film.name) : ""}</h3>
+              <div class="film-meta" id="film-meta">${film ? `<span class="tag">${isSeries ? "Serie" : "Película"}</span><span class="tag ok">${icon("check", 12)} ${escapeHtml(knownId)}</span>` : ""}</div>
+              <p class="film-overview" id="film-overview"></p>
+              ${editing ? "" : `<button type="button" class="btn btn-ghost film-change" id="film-change">${icon("search", 16)} Cambiar</button>`}
             </div>
           </div>
         </div>
+        <div class="hint" id="imdb-hint">${editing ? "La película no se puede cambiar al editar." : ""}</div>
+      </section>
+
+      <section class="step" id="step-copy">
+        <div class="step-head">
+          <span class="step-num" id="step2-num">2</span>
+          <h2 class="step-title">La copia</h2>
+          <div class="segmented" role="tablist" aria-label="Origen de la copia">
+            <button type="button" data-mode="prowlarr" class="${v.prowlarrMode ? "active" : ""}">${icon("search", 16)} <span><span class="seg-extra">Buscar en </span>Prowlarr</span></button>
+            <button type="button" data-mode="manual" class="${v.prowlarrMode ? "" : "active"}">${icon("magnet", 16)} <span><span class="seg-extra">Pegar </span>magnet</span></button>
+          </div>
+        </div>
+
+        <div id="manual-panel">
+          <label class="field-label" for="magnet">Magnet link</label>
+          <textarea class="input" id="magnet" name="magnet" placeholder="magnet:?xt=urn:btih:..." rows="3">${escapeHtml(v.magnet)}</textarea>
+          <div class="hint" id="magnet-hint">${manualHint}</div>
+        </div>
+
+        <div id="prowlarr-panel">
+          <div class="toolbar">
+            <div class="input-icon grow">
+              ${icon("search", 18)}
+              <input class="input" id="prowlarr-query" placeholder="Título a buscar..." autocomplete="off" value="${escapeHtml(v.title)}">
+            </div>
+            <input type="hidden" id="prowlarr-original-query" value="">
+            <select class="select" id="prowlarr-indexer" aria-label="Indexer">
+              <option value="">Todos los indexers</option>
+              <option value="The Pirate Bay">The Pirate Bay</option>
+              <option value="DivxTotal">DivxTotal</option>
+            </select>
+            <button type="button" id="prowlarr-search-btn" class="btn btn-ghost">${icon("search", 17)} Buscar</button>
+          </div>
+          <div class="subbar">
+            <div class="sorts" role="toolbar" aria-label="Ordenar">
+              <span class="label" style="align-self:center;margin-right:4px">Ordenar</span>
+              <button type="button" class="chip active" data-sort="">Relevancia</button>
+              <button type="button" class="chip" data-sort="seeders">Seeders</button>
+              <button type="button" class="chip" data-sort="size">Tamaño</button>
+              <button type="button" class="chip" data-sort="year">Año</button>
+            </div>
+            <label class="chip"><input type="checkbox" id="prowlarr-es"> 🇪🇸 Solo España</label>
+          </div>
+          <div class="releases" id="releases">
+            <div class="empty-box">${icon("film", 28)}Elige una película arriba o escribe un título y pulsa Buscar.</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="savebar">
+        <div class="save-summary">
+          <div class="what" id="save-what">${v.title ? escapeHtml(v.title) : "Elige una película"}</div>
+          <div class="sub" id="save-sub">${editing ? "Se conservará la copia actual" : "y una copia para poder guardar"}</div>
+        </div>
+        <div class="rd-chips">
+          <span class="label">Cachear en</span>
+          ${RD_ACCOUNTS.map((acc) => `<label class="chip"><input type="checkbox" name="rdCache${acc.id}" value="1"${v.rdCache[acc.id] ? " checked" : ""}> ${escapeHtml(acc.id)}</label>`).join("")}
+        </div>
+        <button type="submit" class="btn btn-primary" id="save-btn">${icon("check", 18)} Guardar y desplegar</button>
+        <p class="save-note${isLocal() ? " local" : ""}">${isLocal()
+            ? "Estás en local, pero guardar hace un commit real al repo y Vercel redespliega producción (~1 min)."
+            : "Al guardar se hace un commit al repo y Vercel redespliega (~1 min)."}</p>
       </div>
     </form>
-  </div>
+  </main>
+
+  ${renderBottomNav("add")}
 
   <script>
-    // Recarga si la página vuelve del bfcache (típico al reabrir la PWA
-    // desde el icono tras dejarla en segundo plano): sin esto, el usuario
-    // ve la versión que tenía cargada la última vez, no la actual.
-    window.addEventListener('pageshow', function (e) {
-      if (e.persisted) location.reload();
-    });
+    ${BFCACHE_RELOAD_SCRIPT}
     (function () {
-      var modeCheckbox = document.getElementById('prowlarr-mode');
+      var editing = ${editing ? "true" : "false"};
+      var manualHintText = ${JSON.stringify(manualHint)};
+      var form = document.getElementById('main-form');
       var modeField = document.getElementById('prowlarrModeField');
-      var panel = document.getElementById('prowlarr-panel');
-      var magnetInput = document.getElementById('magnet');
-      var magnetHintEl = document.getElementById('magnet-hint');
       var imdbIdField = document.getElementById('imdbId');
-      var movieNameInput = document.getElementById('movieName');
-      var downloadRefField = document.getElementById('downloadRefField');
-      var contentTypeSwitch = document.getElementById('content-type-switch');
-      var contentTypeTitle = document.getElementById('content-type-title');
+      var titleField = document.getElementById('title-field');
       var typeField = document.getElementById('type-field');
-      var manualHintText = ${JSON.stringify(magnetHint)};
+      var downloadRefField = document.getElementById('downloadRefField');
+      var magnetInput = document.getElementById('magnet');
+      var magnetHint = document.getElementById('magnet-hint');
+      var imdbHint = document.getElementById('imdb-hint');
+      var saveWhat = document.getElementById('save-what');
+      var saveSub = document.getElementById('save-sub');
+      var saveBtn = document.getElementById('save-btn');
+      var searchInput = document.getElementById('movieSearch');
+      var picksEl = document.getElementById('picks');
+      var picksMsg = document.getElementById('picks-msg');
+      var filmSearch = document.getElementById('film-search');
+      var filmEl = document.getElementById('film');
+      var queryInput = document.getElementById('prowlarr-query');
+      var originalQueryInput = document.getElementById('prowlarr-original-query');
+      var indexerSelect = document.getElementById('prowlarr-indexer');
+      var esCheckbox = document.getElementById('prowlarr-es');
+      var releasesEl = document.getElementById('releases');
+      var selectedRelease = null;
+      var lastResults = [];
+      var sortKey = '';
+      var tmdbTimer = null;
+      var tmdbRequest = 0;
+      var searchRequest = 0;
+      var lastPicks = [];
 
-      function currentContentType() {
-        return contentTypeSwitch.checked ? 'series' : 'movie';
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
       }
+      function contentType() { return typeField.value; }
+      function prowlarrMode() { return modeField.value === '1'; }
 
-      function applyContentType() {
-        var isSeries = contentTypeSwitch.checked;
-        contentTypeTitle.textContent = isSeries ? 'Serie' : 'Película';
-        typeField.value = isSeries ? 'series' : 'movie';
-      }
-
-      function applyMode() {
-        var isProwlarr = modeCheckbox.checked;
-        modeField.value = isProwlarr ? '1' : '0';
-        panel.style.display = isProwlarr ? 'block' : 'none';
-        magnetInput.readOnly = isProwlarr;
-        magnetInput.placeholder = isProwlarr ? 'Elige un resultado de la tabla de abajo...' : 'magnet:?xt=urn:btih:...';
-        magnetHintEl.textContent = isProwlarr
-          ? 'Se rellena automáticamente al elegir un resultado de Prowlarr.'
-          : manualHintText;
-        magnetHintEl.style.color = '';
-        if (!isProwlarr) downloadRefField.value = '';
-      }
-
-      modeCheckbox.addEventListener('change', applyMode);
-      contentTypeSwitch.addEventListener('change', applyContentType);
-      magnetInput.addEventListener('input', function () {
-        if (!magnetInput.readOnly) downloadRefField.value = '';
-      });
-      applyMode();
-      applyContentType();
-
-      document.getElementById('main-form').addEventListener('submit', function (e) {
-        if (!movieNameInput.readOnly && !imdbIdField.value) {
-          e.preventDefault();
-          document.getElementById('imdb-hint').textContent = 'Elige una película de la lista de IMDb antes de guardar.';
-          document.getElementById('imdb-hint').style.color = 'var(--err-text)';
-          movieNameInput.focus();
-          return;
-        }
-        if (!magnetInput.value.trim()) {
-          e.preventDefault();
-          magnetHintEl.textContent = 'Elige un resultado de Prowlarr o pega un magnet a mano antes de guardar.';
-          magnetHintEl.style.color = 'var(--err-text)';
-          if (!modeCheckbox.checked) magnetInput.focus();
-        }
-      });
-    })();
-
-    // ── Buscador de películas por nombre (TMDB) ───────────────
-    (function () {
-      var input = document.getElementById('movieName');
-      var imdbIdField = document.getElementById('imdbId');
-      var prowlarrQuery = document.getElementById('prowlarr-query');
-      var resultsEl = document.getElementById('imdb-results');
-      var posterImg = document.getElementById('poster-img');
-      var posterPlaceholder = document.getElementById('poster-placeholder-text');
-      var contentTypeSwitch = document.getElementById('content-type-switch');
-      var debounceTimer = null;
-      var currentRequestId = 0;
-
-      if (input.readOnly) return;
-
-      function escapeHtmlClient(str) {
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-      }
-
-      function closeResults() {
-        resultsEl.classList.remove('open');
-        resultsEl.innerHTML = '';
-      }
-
-      function setPoster(url) {
-        if (url) {
-          posterImg.src = url;
-          posterImg.style.display = 'block';
-          posterPlaceholder.style.display = 'none';
+      // ── Resumen de la barra de guardar ──
+      function updateSummary() {
+        var title = titleField.value;
+        var hasFilm = editing || (!!title && !!imdbIdField.value);
+        var hasCopy = !!magnetInput.value.trim();
+        document.getElementById('step1-num').classList.toggle('done', hasFilm);
+        document.getElementById('step2-num').classList.toggle('done', hasCopy || editing);
+        saveWhat.textContent = title || 'Elige una película';
+        if (selectedRelease && prowlarrMode()) {
+          saveSub.textContent = (qualityOf(selectedRelease.title) || 'Copia') + ' · ' + formatSize(selectedRelease.size) + ' · ' + (selectedRelease.indexer || '');
+        } else if (hasCopy) {
+          saveSub.textContent = 'Magnet pegado a mano';
         } else {
-          posterImg.style.display = 'none';
-          posterPlaceholder.style.display = 'block';
+          saveSub.textContent = editing ? 'Se conservará la copia actual' : 'Falta elegir una copia';
         }
       }
 
-      function renderResults(metas) {
-        if (!metas.length) {
-          resultsEl.innerHTML = '<div class="autocomplete-empty">Sin resultados.</div>';
-          resultsEl.classList.add('open');
-          return;
-        }
-        resultsEl.innerHTML = metas.map(function (m) {
-          var poster = m.poster
-            ? '<img class="poster" src="' + escapeHtmlClient(m.poster) + '" alt="" loading="lazy">'
-            : '<div class="poster" style="display:flex;align-items:center;justify-content:center;">🎬</div>';
-          var year = m.releaseInfo ? escapeHtmlClient(String(m.releaseInfo)) : '';
-          return '<div class="autocomplete-item" data-tmdb-id="' + escapeHtmlClient(m.tmdbId) + '" data-name="' + escapeHtmlClient(m.name) + '" data-original-name="' + escapeHtmlClient(m.originalName || '') + '" data-poster="' + escapeHtmlClient(m.poster || '') + '">' +
-            poster +
-            '<div class="ac-info"><div class="ac-name">' + escapeHtmlClient(m.name) + '</div><div class="ac-year">' + year + '</div></div>' +
-            '</div>';
-        }).join('');
-        resultsEl.classList.add('open');
+      // ── Tipo (película / serie) ──
+      document.querySelectorAll('[data-type]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (typeField.value === btn.dataset.type) return;
+          document.querySelectorAll('[data-type]').forEach(function (b) { b.classList.toggle('active', b === btn); });
+          typeField.value = btn.dataset.type;
+          var isSeries = btn.dataset.type === 'series';
+          document.querySelector('#step-film .step-title').textContent = isSeries ? 'La serie' : 'La película';
+          searchInput.placeholder = isSeries ? 'Busca una serie...' : 'Busca una película...';
+          clearFilm();
+          if (searchInput.value.trim().length >= 2) searchTmdb();
+        });
+      });
 
-        resultsEl.querySelectorAll('.autocomplete-item').forEach(function (item) {
-          item.addEventListener('click', function () {
-            var hintEl = document.getElementById('imdb-hint');
-            input.value = item.dataset.name;
-            imdbIdField.value = '';
-            setPoster(item.dataset.poster);
-            prowlarrQuery.value = item.dataset.name;
-            document.getElementById('prowlarr-original-query').value = item.dataset.originalName || '';
-            document.getElementById('prowlarr-search-btn').click();
-            closeResults();
-            hintEl.textContent = 'Resolviendo el ID de IMDb…';
-            hintEl.style.color = '';
-            fetch('/api/movie-resolve', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tmdbId: item.dataset.tmdbId, type: (contentTypeSwitch.checked ? 'series' : 'movie') }),
-            })
-              .then(function (res) { return res.json(); })
-              .then(function (data) {
-                if (data.error || !data.imdbId) {
-                  hintEl.textContent = data.error || 'No se encontró el ID de IMDb para esta película.';
-                  hintEl.style.color = 'var(--err-text)';
-                  return;
-                }
-                imdbIdField.value = data.imdbId;
-                hintEl.textContent = 'Elige una opción de la lista: se rellena el título y el ID de IMDb automáticamente.';
-                hintEl.style.color = '';
-              })
-              .catch(function () {
-                hintEl.textContent = 'No se pudo resolver el ID de IMDb.';
-                hintEl.style.color = 'var(--err-text)';
-              });
-          });
+      // ── Modo de la copia (Prowlarr / manual) ──
+      function applyMode(mode) {
+        var isProwlarr = mode === 'prowlarr';
+        modeField.value = isProwlarr ? '1' : '0';
+        document.querySelectorAll('[data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
+        document.getElementById('prowlarr-panel').style.display = isProwlarr ? 'block' : 'none';
+        document.getElementById('manual-panel').style.display = isProwlarr ? 'none' : 'block';
+        if (!isProwlarr) {
+          downloadRefField.value = '';
+          if (selectedRelease) { magnetInput.value = ''; selectedRelease = null; markSelected(null); }
+          magnetHint.textContent = manualHintText;
+          magnetHint.className = 'hint';
+        }
+        updateSummary();
+      }
+      document.querySelectorAll('[data-mode]').forEach(function (b) {
+        b.addEventListener('click', function () { applyMode(b.dataset.mode); });
+      });
+      magnetInput.addEventListener('input', function () {
+        if (!prowlarrMode()) downloadRefField.value = '';
+        updateSummary();
+      });
+
+      // ── Búsqueda de la película en TMDB ──
+      function clearFilm() {
+        imdbIdField.value = '';
+        titleField.value = '';
+        filmEl.classList.remove('show');
+        filmSearch.style.display = '';
+        imdbHint.textContent = '';
+        updateSummary();
+      }
+
+      function showPicksMsg(html) {
+        picksMsg.innerHTML = html;
+        picksMsg.style.display = html ? 'flex' : 'none';
+      }
+
+      function renderPicks(results) {
+        lastPicks = results;
+        if (!results.length) { picksEl.innerHTML = ''; showPicksMsg('Sin resultados en TMDB.'); return; }
+        showPicksMsg('');
+        picksEl.innerHTML = results.map(function (m, i) {
+          var poster = m.posterLarge || m.poster;
+          return '<button type="button" class="pick" data-idx="' + i + '" style="--i:' + Math.min(i, 12) + '">' +
+            '<div class="pick-poster">' + (poster ? '<img src="' + esc(poster) + '" alt="" loading="lazy">' : '') +
+            (m.rating ? '<span class="tag gold pick-rating">★ ' + esc(m.rating) + '</span>' : '') + '</div>' +
+            '<div class="pick-name">' + esc(m.name) + '</div>' +
+            '<div class="pick-year">' + esc(m.releaseInfo || '—') + '</div></button>';
+        }).join('');
+        picksEl.querySelectorAll('.pick').forEach(function (el) {
+          el.addEventListener('click', function () { chooseFilm(lastPicks[Number(el.dataset.idx)]); });
         });
       }
 
-      input.addEventListener('input', function () {
-        var q = input.value.trim();
-        imdbIdField.value = '';
-        setPoster('');
-        clearTimeout(debounceTimer);
-
-        if (q.length < 2) {
-          closeResults();
-          return;
-        }
-
-        debounceTimer = setTimeout(function () {
-          var requestId = ++currentRequestId;
-          fetch('/api/movie-search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ q: q, type: (contentTypeSwitch.checked ? 'series' : 'movie') }),
+      function searchTmdb() {
+        var q = searchInput.value.trim();
+        if (q.length < 2) { picksEl.innerHTML = ''; showPicksMsg(''); return; }
+        var id = ++tmdbRequest;
+        picksEl.innerHTML = '';
+        showPicksMsg('<span class="spinner"></span> Buscando en TMDB…');
+        fetch('/api/movie-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: q, type: contentType() }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (id !== tmdbRequest) return;
+            if (data.error) { showPicksMsg(esc(data.error)); return; }
+            renderPicks(data.results || []);
           })
-            .then(function (res) { return res.json(); })
-            .then(function (data) {
-              if (requestId !== currentRequestId) return;
-              if (data.error) {
-                resultsEl.innerHTML = '<div class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</div>';
-                resultsEl.classList.add('open');
-                return;
-              }
-              renderResults(data.results || []);
-            })
-            .catch(function () {
-              if (requestId !== currentRequestId) return;
-              resultsEl.innerHTML = '<div class="autocomplete-empty">No se pudo buscar ahora mismo.</div>';
-              resultsEl.classList.add('open');
-            });
-        }, 350);
-      });
-
-      document.addEventListener('click', function (e) {
-        if (!e.target.closest('.autocomplete-wrap')) closeResults();
-      });
-    })();
-
-    // ── Buscador de torrents (Prowlarr) ───────────────────────
-    (function () {
-      var queryInput = document.getElementById('prowlarr-query');
-      var originalQueryInput = document.getElementById('prowlarr-original-query');
-      var contentTypeSwitch = document.getElementById('content-type-switch');
-      var indexerSelect = document.getElementById('prowlarr-indexer');
-      var esCheckbox = document.getElementById('prowlarr-es');
-      var searchBtn = document.getElementById('prowlarr-search-btn');
-      var tbody = document.getElementById('prowlarr-tbody');
-      var magnetInput = document.getElementById('magnet');
-      var magnetHintEl = document.getElementById('magnet-hint');
-      var downloadRefField = document.getElementById('downloadRefField');
-      var sortHeaders = document.querySelectorAll('.results-table th.sortable');
-      var lastResults = [];
-      var sortState = { key: null, dir: -1 };
-
-      function escapeHtmlClient(str) {
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+          .catch(function () { if (id === tmdbRequest) showPicksMsg('No se pudo buscar ahora mismo.'); });
       }
 
-      window.handlePosterError = function (img) {
-        img.style.display = 'none';
-        if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
-      };
+      if (searchInput) searchInput.addEventListener('input', function () {
+        clearTimeout(tmdbTimer);
+        tmdbTimer = setTimeout(searchTmdb, 350);
+      });
 
+      function setFilm(m) {
+        var bg = document.getElementById('film-bg');
+        var backdrop = document.getElementById('film-backdrop');
+        bg.classList.toggle('fallback', !m.backdrop);
+        backdrop.src = m.backdrop || m.posterLarge || m.poster || '';
+        var poster = document.getElementById('film-poster');
+        poster.src = m.posterLarge || m.poster || '';
+        poster.style.visibility = (m.posterLarge || m.poster) ? 'visible' : 'hidden';
+        document.getElementById('film-title').textContent = m.name;
+        document.getElementById('film-overview').textContent = m.overview || '';
+        filmEl.classList.add('show');
+      }
+
+      function setFilmMeta(extra) {
+        var m = filmEl._film || {};
+        document.getElementById('film-meta').innerHTML =
+          '<span class="tag">' + (contentType() === 'series' ? 'Serie' : 'Película') + '</span>' +
+          (m.releaseInfo ? '<span class="tag">' + esc(m.releaseInfo) + '</span>' : '') +
+          (m.rating ? '<span class="tag gold">★ ' + esc(m.rating) + '</span>' : '') + (extra || '');
+      }
+
+      function chooseFilm(m) {
+        filmEl._film = m;
+        setFilm(m);
+        filmSearch.style.display = 'none';
+        titleField.value = m.name;
+        imdbIdField.value = '';
+        setFilmMeta('<span class="tag"><span class="spinner" style="width:11px;height:11px"></span> IMDb</span>');
+        imdbHint.textContent = '';
+        imdbHint.className = 'hint';
+        updateSummary();
+
+        queryInput.value = m.name;
+        originalQueryInput.value = m.originalName || '';
+        if (prowlarrMode()) runSearch();
+
+        fetch('/api/movie-resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tmdbId: m.tmdbId, type: contentType() }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (filmEl._film !== m) return;
+            if (data.error || !data.imdbId) {
+              setFilmMeta('<span class="tag" style="color:var(--err)">Sin IMDb</span>');
+              imdbHint.textContent = data.error || 'No se encontró el ID de IMDb para esta película.';
+              imdbHint.className = 'hint err';
+              return;
+            }
+            imdbIdField.value = data.imdbId;
+            setFilmMeta('<span class="tag ok">✓ ' + esc(data.imdbId) + '</span>');
+            updateSummary();
+          })
+          .catch(function () {
+            setFilmMeta('<span class="tag" style="color:var(--err)">Sin IMDb</span>');
+            imdbHint.textContent = 'No se pudo resolver el ID de IMDb.';
+            imdbHint.className = 'hint err';
+          });
+      }
+
+      var changeBtn = document.getElementById('film-change');
+      if (changeBtn) changeBtn.addEventListener('click', function () {
+        clearFilm();
+        searchInput.focus();
+        searchInput.select();
+      });
+
+      // ── Copias en Prowlarr ──
       function formatSize(bytes) {
         if (!bytes) return '—';
         var gb = bytes / (1024 * 1024 * 1024);
         return gb >= 1 ? gb.toFixed(2) + ' GB' : (bytes / (1024 * 1024)).toFixed(0) + ' MB';
       }
 
-      function sortedResults() {
-        var filtered = esCheckbox.checked ? lastResults.filter(function (r) { return r.isSpainSpanish; }) : lastResults;
-        if (!sortState.key) return filtered;
-        var key = sortState.key;
-        var dir = sortState.dir;
-        return filtered.slice().sort(function (a, b) {
-          var av = a[key];
-          var bv = b[key];
+      function qualityOf(title) {
+        var t = String(title || '').toLowerCase();
+        if (/2160p|4k|uhd/.test(t)) return '4K';
+        if (/1080p/.test(t)) return '1080p';
+        if (/720p/.test(t)) return '720p';
+        if (/480p|dvdrip|xvid|screener/.test(t)) return 'SD';
+        return '';
+      }
+
+      function releaseTags(r) {
+        var t = String(r.title || '').toLowerCase();
+        var tags = [];
+        var q = qualityOf(t);
+        if (q) tags.push('<span class="tag ' + (q === '4K' ? 'gold' : q === '1080p' ? 'accent' : '') + '">' + q + '</span>');
+        if (/remux/.test(t)) tags.push('<span class="tag">Remux</span>');
+        else if (/bluray|blu-ray|bdrip|brrip/.test(t)) tags.push('<span class="tag">BluRay</span>');
+        else if (/web-dl|webdl|webrip|web /.test(t)) tags.push('<span class="tag">WEB</span>');
+        if (/hdr|dolby.vision/.test(t)) tags.push('<span class="tag gold">HDR</span>');
+        if (/x265|hevc|h265|h.265/.test(t)) tags.push('<span class="tag">x265</span>');
+        if (r.isSpainSpanish) tags.push('<span class="tag ok">🇪🇸 Castellano</span>');
+        if (r.contentType) tags.push('<span class="tag">' + esc(r.contentType) + '</span>');
+        return tags.join('');
+      }
+
+      function seedClass(n) { return n == null ? '' : n >= 20 ? 'hot' : n >= 5 ? 'warm' : 'cold'; }
+
+      function visibleResults() {
+        var list = esCheckbox.checked ? lastResults.filter(function (r) { return r.isSpainSpanish; }) : lastResults.slice();
+        if (!sortKey) return list;
+        return list.sort(function (a, b) {
+          var av = a[sortKey], bv = b[sortKey];
           if (av == null && bv == null) return 0;
           if (av == null) return 1;
           if (bv == null) return -1;
-          return (av - bv) * dir;
+          return bv - av;
         });
       }
 
-      function updateSortArrows() {
-        sortHeaders.forEach(function (th) {
-          var arrow = th.querySelector('.sort-arrow');
-          if (th.dataset.sort === sortState.key) {
-            arrow.textContent = sortState.dir === 1 ? '▲' : '▼';
-          } else {
-            arrow.textContent = '';
-          }
+      function markSelected(row) {
+        releasesEl.querySelectorAll('.release').forEach(function (el) {
+          el.classList.toggle('selected', el === row);
+          var go = el.querySelector('.release-go');
+          go.classList.remove('err');
+          go.innerHTML = el === row ? '✓ Elegida' : 'Elegir';
         });
       }
 
-      sortHeaders.forEach(function (th) {
-        th.addEventListener('click', function () {
-          var key = th.dataset.sort;
-          if (sortState.key === key) {
-            sortState.dir = -sortState.dir;
-          } else {
-            sortState.key = key;
-            sortState.dir = -1;
-          }
-          updateSortArrows();
-          renderResults();
-        });
-      });
-
-      function renderResults() {
-        updateSortArrows();
-        var results = sortedResults();
-        if (results.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">Sin resultados' + (esCheckbox.checked ? ' en español de España' : '') + '.</td></tr>';
+      function renderReleases() {
+        var list = visibleResults();
+        if (!list.length) {
+          releasesEl.innerHTML = '<div class="empty-box">Sin resultados' + (esCheckbox.checked ? ' en castellano de España' : '') + '.</div>';
           return;
         }
-        tbody.innerHTML = results.map(function (r) {
-          var i = lastResults.indexOf(r);
-          var thumb = r.poster
-            ? '<img class="result-poster" src="' + escapeHtmlClient(r.poster) + '" alt="" loading="lazy" onerror="handlePosterError(this)">' +
-              '<div class="result-poster result-poster-placeholder" style="display:none"><span>No<br>Data</span></div>'
-            : '<div class="result-poster result-poster-placeholder"><span>No<br>Data</span></div>';
-          return '<tr class="prowlarr-row" data-idx="' + i + '">' +
-            '<td>' + thumb + '</td>' +
-            '<td class="title-cell">' + escapeHtmlClient(r.title) + (r.isSpainSpanish ? ' 🇪🇸' : '') + '</td>' +
-            '<td>' + formatSize(r.size) + '</td>' +
-            '<td>' + escapeHtmlClient(r.year || '—') + '</td>' +
-            '<td>' + (r.seeders != null ? r.seeders : '—') + '</td>' +
-            '<td>' + escapeHtmlClient(r.contentType || '—') + '</td>' +
-            '<td>' + escapeHtmlClient(r.indexer || '') + '</td>' +
-            '<td class="go">Elegir →</td>' +
-            '</tr>';
+        releasesEl.innerHTML = list.map(function (r, i) {
+          var idx = lastResults.indexOf(r);
+          var isSel = selectedRelease === r;
+          return '<button type="button" class="release' + (isSel ? ' selected' : '') + '" data-idx="' + idx + '" style="--i:' + Math.min(i, 15) + '">' +
+            '<div class="release-thumb">' + (r.poster ? '<img src="' + esc(r.poster) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '</div>' +
+            '<div class="release-main">' +
+              '<div class="release-title">' + esc(r.title) + '</div>' +
+              '<div class="release-tags">' + releaseTags(r) + '</div>' +
+              '<div class="release-meta">' +
+                '<span>' + formatSize(r.size) + '</span>' +
+                '<span class="seeds ' + seedClass(r.seeders) + '">▲ ' + (r.seeders != null ? r.seeders : '—') + ' seeders</span>' +
+                (r.year ? '<span>' + esc(r.year) + '</span>' : '') +
+                '<span>' + esc(r.indexer || '') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<span class="release-go">' + (isSel ? '✓ Elegida' : 'Elegir') + '</span>' +
+          '</button>';
         }).join('');
 
-        function selectResult(row, r, magnet) {
-          magnetInput.value = magnet;
-          magnetHintEl.textContent = 'Seleccionado: ' + r.title;
-          magnetHintEl.style.color = '';
-          // Si hay downloadRef, al guardar se sube el .torrent real a
-          // Real-Debrid en vez de un magnet (más fiable en trackers
-          // privados, donde a veces RD no consigue negociar metadatos).
-          downloadRefField.value = r.downloadRef || '';
-          tbody.querySelectorAll('.prowlarr-row').forEach(function (el) {
-            el.classList.remove('selected');
-            var go = el.querySelector('.go');
-            if (go) { go.textContent = 'Elegir →'; go.classList.remove('ok', 'err'); }
-          });
-          row.classList.add('selected');
-          var goCell = row.querySelector('.go');
-          if (goCell) { goCell.textContent = '✓'; goCell.classList.add('ok'); }
-        }
-
-        function showResolveError(row, message) {
-          var goCell = row.querySelector('.go');
-          if (goCell) {
-            goCell.textContent = 'Error';
-            goCell.classList.add('err');
-            goCell.title = message;
-          }
-          magnetHintEl.textContent = message;
-          magnetHintEl.style.color = 'var(--err-text)';
-        }
-
-        tbody.querySelectorAll('.prowlarr-row').forEach(function (row) {
-          row.addEventListener('click', function () {
-            var r = lastResults[Number(row.dataset.idx)];
-            if (r.magnet) {
-              selectResult(row, r, r.magnet);
-              return;
-            }
-            // Sin magnet directo: hay que descargar el .torrent y calcular
-            // el hash, solo para este resultado (no se hizo al buscar).
-            var goCell = row.querySelector('.go');
-            goCell.innerHTML = '<span class="spinner"></span>';
-            fetch('/api/prowlarr-resolve', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ downloadRef: r.downloadRef }),
-            })
-              .then(function (res) { return res.json(); })
-              .then(function (data) {
-                if (data.error) {
-                  showResolveError(row, data.error);
-                  return;
-                }
-                r.magnet = data.magnet;
-                selectResult(row, r, data.magnet);
-              })
-              .catch(function () {
-                showResolveError(row, 'No se pudo resolver el magnet de este resultado.');
-              });
-          });
+        releasesEl.querySelectorAll('.release').forEach(function (row) {
+          row.addEventListener('click', function () { pickRelease(row, lastResults[Number(row.dataset.idx)]); });
         });
+      }
+
+      function applyRelease(row, r, magnet) {
+        selectedRelease = r;
+        magnetInput.value = magnet;
+        // Si hay downloadRef, al guardar se sube el .torrent real a
+        // Real-Debrid en vez de un magnet (más fiable en trackers
+        // privados, donde a veces RD no consigue negociar metadatos).
+        downloadRefField.value = r.downloadRef || '';
+        markSelected(row);
+        updateSummary();
+      }
+
+      function pickRelease(row, r) {
+        if (r.magnet) { applyRelease(row, r, r.magnet); return; }
+        // Sin magnet directo: hay que descargar el .torrent y calcular
+        // el hash, solo para este resultado (no se hizo al buscar).
+        var go = row.querySelector('.release-go');
+        go.style.display = 'inline-flex';
+        go.innerHTML = '<span class="spinner"></span>';
+        fetch('/api/prowlarr-resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ downloadRef: r.downloadRef }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            go.style.display = '';
+            if (data.error) { go.textContent = 'Error'; go.classList.add('err'); go.title = data.error; go.style.display = 'inline-flex'; return; }
+            r.magnet = data.magnet;
+            applyRelease(row, r, data.magnet);
+          })
+          .catch(function () {
+            go.textContent = 'Error'; go.classList.add('err'); go.style.display = 'inline-flex';
+            go.title = 'No se pudo resolver el magnet de este resultado.';
+          });
       }
 
       function runSearch() {
         var q = queryInput.value.trim();
         if (!q) return;
-        tbody.innerHTML = '<tr><td colspan="8"><div class="loading-row"><span class="spinner"></span> Buscando...</div></td></tr>';
+        var id = ++searchRequest;
+        selectedRelease = null;
+        if (prowlarrMode()) { magnetInput.value = ''; downloadRefField.value = ''; }
+        updateSummary();
+        releasesEl.innerHTML = '<div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div>';
         fetch('/api/prowlarr-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ q: q, scope: (contentTypeSwitch.checked ? 'tv' : 'movie'), indexer: indexerSelect.value, originalName: originalQueryInput.value }),
+          body: JSON.stringify({ q: q, scope: (contentType() === 'series' ? 'tv' : 'movie'), indexer: indexerSelect.value, originalName: originalQueryInput.value }),
         })
           .then(function (res) { return res.json(); })
           .then(function (data) {
-            if (data.error) {
-              tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">' + escapeHtmlClient(data.error) + '</td></tr>';
-              return;
-            }
+            if (id !== searchRequest) return;
+            if (data.error) { releasesEl.innerHTML = '<div class="empty-box" style="color:var(--err)">' + esc(data.error) + '</div>'; return; }
             lastResults = data.results || [];
-            renderResults();
+            renderReleases();
           })
           .catch(function () {
-            tbody.innerHTML = '<tr><td colspan="8" class="autocomplete-empty">No se pudo buscar ahora mismo.</td></tr>';
+            if (id === searchRequest) releasesEl.innerHTML = '<div class="empty-box">No se pudo buscar ahora mismo.</div>';
           });
       }
 
-      searchBtn.addEventListener('click', runSearch);
-      esCheckbox.addEventListener('change', renderResults);
-      queryInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+      document.getElementById('prowlarr-search-btn').addEventListener('click', runSearch);
+      queryInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
+      esCheckbox.addEventListener('change', function () { if (lastResults.length) renderReleases(); });
+      document.querySelectorAll('[data-sort]').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          document.querySelectorAll('[data-sort]').forEach(function (c) { c.classList.toggle('active', c === chip); });
+          sortKey = chip.dataset.sort;
+          if (lastResults.length) renderReleases();
+        });
       });
+
+      // ── Guardar ──
+      form.addEventListener('submit', function (e) {
+        if (!editing && !imdbIdField.value) {
+          e.preventDefault();
+          imdbHint.textContent = 'Elige una película de la lista antes de guardar.';
+          imdbHint.className = 'hint err';
+          document.getElementById('step-film').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        if (!editing && !magnetInput.value.trim()) {
+          e.preventDefault();
+          if (prowlarrMode()) {
+            saveSub.textContent = 'Elige una copia de la lista antes de guardar.';
+          } else {
+            magnetHint.textContent = 'Pega un magnet antes de guardar.';
+            magnetHint.className = 'hint err';
+            magnetInput.focus();
+          }
+          document.getElementById('step-copy').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner" style="border-top-color:#fff"></span> Guardando…';
+      });
+
+      applyMode(prowlarrMode() ? 'prowlarr' : 'manual');
+      if (!editing && !imdbIdField.value && searchInput.value.trim().length >= 2) searchTmdb();
+      if (editing && queryInput.value.trim() && prowlarrMode()) runSearch();
     })();
   </script>
 </body>

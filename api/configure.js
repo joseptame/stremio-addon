@@ -1,83 +1,62 @@
+const { headTags, themeCss, brandMark, icon } = require("../lib/ui");
+
 function renderPage() {
     return `<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/icon.png">
-<title>Instalar · JFuster RD</title>
-<style>
-  :root {
-    --bg: #14121f;
-    --panel: #1d1a2b;
-    --panel-border: #2c2840;
-    --text: #eae7f5;
-    --text-dim: #9691ad;
-    --accent: #7b5bf0;
-    --accent-hover: #6a4adf;
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    margin: 0;
-    padding: 32px 16px 64px;
-  }
-  .wrap { max-width: 480px; margin: 0 auto; }
-  header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-  header img { width: 40px; height: 40px; border-radius: 8px; }
-  header h1 { font-size: 1.3rem; margin: 0; }
-  header p { margin: 2px 0 0; color: var(--text-dim); font-size: 0.85rem; }
-  .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-  .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
-  .card p.desc { color: var(--text-dim); font-size: 0.85rem; line-height: 1.5; margin: 0 0 16px; }
-  label { display: block; margin-top: 14px; font-weight: 600; font-size: 0.9rem; }
-  input {
-    width: 100%; padding: 10px 12px; margin-top: 6px; font-size: 0.95rem;
-    background: #100e1a; border: 1px solid var(--panel-border); border-radius: 8px; color: var(--text);
-  }
-  input:focus { outline: none; border-color: var(--accent); }
-  input::placeholder { color: #5c5875; }
-  .btn { padding: 10px 16px; font-size: 0.9rem; cursor: pointer; border: none; border-radius: 8px; font-weight: 600; }
-  .btn-primary { background: var(--accent); color: white; width: 100%; margin-top: 18px; }
-  .btn-primary:hover { background: var(--accent-hover); }
-  .btn-secondary { background: #2c2840; color: var(--text); width: 100%; margin-top: 8px; }
-  .btn-secondary:hover { background: #383253; }
-  a.btn { display: block; text-align: center; text-decoration: none; }
-  #result { display: none; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--panel-border); }
-  .hint { color: var(--text-dim); font-size: 0.78rem; margin-top: 6px; }
+${headTags("Instalar · JFuster RD")}
+<style>${themeCss()}
+  body { min-height: 100vh; min-height: 100dvh; padding: calc(28px + var(--safe-t)) 16px 64px; position: relative; overflow-x: hidden; }
+  body::before { content: ""; position: fixed; z-index: -1; width: 70vmax; height: 70vmax; left: -25vmax; top: -35vmax; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,61,87,0.18), transparent 60%); }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  .head { display: flex; justify-content: center; margin-bottom: 34px; }
+  .card { background: rgba(23,21,30,0.85); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--line-strong); border-radius: 24px; padding: 30px; box-shadow: 0 40px 80px -24px rgba(0,0,0,0.9); animation: fade-up 0.45s ease both; }
+  h1 { font: 400 2.4rem/1 var(--font-display); letter-spacing: 0.04em; margin: 0 0 10px; }
+  .desc { color: var(--text-dim); font-size: 0.92rem; line-height: 1.6; margin: 0 0 26px; }
+  .desc strong { color: var(--text); }
+  .btn-block { margin-top: 18px; min-height: 50px; }
+  #result { display: none; margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--line); animation: fade-up 0.3s ease both; }
+  .url-row { display: flex; gap: 8px; }
+  .url-row .input { flex: 1; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.8rem; }
+  .steps { display: grid; gap: 12px; margin: 26px 0 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li { display: flex; gap: 12px; align-items: flex-start; font-size: 0.86rem; color: var(--text-dim); counter-increment: s; }
+  .steps li::before { content: counter(s); flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    font: 400 0.95rem/1 var(--font-display); background: var(--accent-soft); color: var(--accent); }
+  @media (max-width: 480px) { .card { padding: 24px 20px; } h1 { font-size: 2rem; } }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <header>
-      <img src="/icon.png" alt="">
-      <div>
-        <h1>JFuster RD</h1>
-        <p>Instalar en Stremio</p>
-      </div>
-    </header>
+    <div class="head">${brandMark({ href: "/configure", sub: "Addon de Stremio" })}</div>
 
     <section class="card">
-      <h2>Enlace de instalación</h2>
+      <h1>Instalar en Stremio</h1>
       <p class="desc">
-        Si tienes cuenta de Real-Debrid, pega tu API key para que los streams
-        se reproduzcan al instante (sin depender de seeders). Es totalmente
-        opcional: sin ella, el addon funciona igual mediante P2P.
+        Si tienes cuenta de Real-Debrid, pega tu API key para que las películas
+        se reproduzcan al instante, sin depender de seeders. Es <strong>totalmente
+        opcional</strong>: sin ella, el addon funciona igual mediante P2P.
       </p>
 
-      <label for="rdKey">API key de Real-Debrid (opcional)</label>
-      <input id="rdKey" placeholder="pégala aquí" autocomplete="off">
+      <label class="field-label" for="rdKey">API key de Real-Debrid (opcional)</label>
+      <input class="input" id="rdKey" placeholder="Pégala aquí" autocomplete="off">
       <div class="hint">La sacas de <strong>real-debrid.com/apitoken</strong>. Nunca se guarda en nuestro servidor: solo viaja en tu propia URL de instalación.</div>
 
-      <button id="generate" class="btn btn-primary">Generar enlace de instalación</button>
+      <button id="generate" class="btn btn-primary btn-block">${icon("link", 18)} Generar enlace de instalación</button>
 
       <div id="result">
-        <label for="manifestUrl">URL del manifest</label>
-        <input id="manifestUrl" readonly>
-        <button id="copy" class="btn btn-secondary">Copiar enlace</button>
-        <a id="installLink" class="btn btn-primary" href="#">Instalar en Stremio</a>
+        <label class="field-label" for="manifestUrl">URL del manifest</label>
+        <div class="url-row">
+          <input class="input" id="manifestUrl" readonly>
+          <button id="copy" class="btn btn-ghost">${icon("copy", 16)} Copiar</button>
+        </div>
+        <a id="installLink" class="btn btn-primary btn-block" href="#">${icon("download", 18)} Instalar en Stremio</a>
+        <ol class="steps">
+          <li>Pulsa “Instalar en Stremio” con la app abierta en este dispositivo.</li>
+          <li>Si no se abre, copia la URL y pégala en Stremio → Addons → buscador.</li>
+          <li>Las películas del videoclub aparecerán en tu catálogo.</li>
+        </ol>
       </div>
     </section>
   </div>
@@ -96,10 +75,15 @@ function renderPage() {
     });
 
     document.getElementById('copy').addEventListener('click', function () {
+      var btn = this;
       var input = document.getElementById('manifestUrl');
       input.select();
       input.setSelectionRange(0, 99999);
-      navigator.clipboard && navigator.clipboard.writeText(input.value);
+      if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(function () {
+        var old = btn.innerHTML;
+        btn.textContent = '¡Copiado!';
+        setTimeout(function () { btn.innerHTML = old; }, 1400);
+      });
     });
   </script>
 </body>
