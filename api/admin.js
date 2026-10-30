@@ -766,7 +766,10 @@ function addStyles() {
   .film-title { font: 400 2.3rem/0.95 var(--font-display); letter-spacing: 0.02em; margin: 2px 0 10px; }
   .film-meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
   .film-overview { margin: 12px 0 0; color: var(--text-dim); font-size: 0.88rem; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-width: 680px; }
-  .film-change { margin-top: 14px; }
+  .film-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .film-video { aspect-ratio: 16 / 9; background: #000; border-top: 1px solid rgba(255,255,255,0.06); }
+  .film-video:empty { display: none; }
+  .film-video iframe { width: 100%; height: 100%; border: 0; display: block; }
 
   .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
   .toolbar .grow { flex: 1 1 240px; }
@@ -919,9 +922,13 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
               <h3 class="film-title" id="film-title">${film ? escapeHtml(film.name) : ""}</h3>
               <div class="film-meta" id="film-meta">${film ? `<span class="tag">${isSeries ? "Serie" : "Película"}</span><span class="tag ok">${icon("check", 12)} ${escapeHtml(knownId)}</span>` : ""}</div>
               <p class="film-overview" id="film-overview"></p>
-              ${editing ? "" : `<button type="button" class="btn btn-ghost film-change" id="film-change">${icon("search", 16)} Cambiar</button>`}
+              <div class="film-actions">
+                <button type="button" class="btn btn-primary" id="film-trailer" style="display:none">${icon("play", 16)} Tráiler</button>
+                ${editing ? "" : `<button type="button" class="btn btn-ghost" id="film-change">${icon("search", 16)} Cambiar</button>`}
+              </div>
             </div>
           </div>
+          <div class="film-video" id="film-video"></div>
         </div>
         <div class="hint" id="imdb-hint">${editing ? "La película no se puede cambiar al editar." : ""}</div>
       </section>
@@ -1096,7 +1103,44 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       });
 
       // ── Búsqueda de la película en TMDB ──
+      // ── Tráiler de la película elegida (clave de YouTube de TMDB) ──
+      var trailerKey = null;
+      var trailerBtn = document.getElementById('film-trailer');
+      var filmVideo = document.getElementById('film-video');
+
+      function setTrailer(key) {
+        trailerKey = key || null;
+        filmVideo.innerHTML = '';
+        trailerBtn.style.display = trailerKey ? '' : 'none';
+      }
+
+      trailerBtn.addEventListener('click', function () {
+        if (!trailerKey) return;
+        if (filmVideo.innerHTML) { filmVideo.innerHTML = ''; return; }
+        filmVideo.innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + encodeURIComponent(trailerKey) +
+          '?autoplay=1&rel=0&modestbranding=1&playsinline=1" title="Tráiler" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>';
+      });
+
+      // Datos extra por id de IMDb: título original (Prowlarr busca con el
+      // título en castellano y en el original), sinopsis, año, nota y tráiler.
+      function loadFilmDetails(imdbId, film) {
+        return fetch('/api/movie-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imdbId: imdbId, type: contentType() }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            var d = data && data.details;
+            if (!d || filmEl._film !== film) return d;
+            setTrailer(d.trailerKey);
+            return d;
+          })
+          .catch(function () { return null; });
+      }
+
       function clearFilm() {
+        setTrailer(null);
         imdbIdField.value = '';
         titleField.value = '';
         filmEl.classList.remove('show');
@@ -1205,6 +1249,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             imdbIdField.value = data.imdbId;
             setFilmMeta('<span class="tag ok">✓ ' + esc(data.imdbId) + '</span>');
             updateSummary();
+            loadFilmDetails(data.imdbId, m);
           })
           .catch(function () {
             setFilmMeta('<span class="tag" style="color:var(--err)">Sin IMDb</span>');
@@ -1405,14 +1450,8 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       // TMDB, así que se piden aquí su título original — Prowlarr busca con
       // el título en castellano y en el original — y, de paso, la sinopsis.
       if (imdbIdField.value && !originalQueryInput.value) {
-        originalReady = fetch('/api/movie-details', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imdbId: imdbIdField.value, type: contentType() }),
-        })
-          .then(function (res) { return res.json(); })
-          .then(function (data) {
-            var d = data && data.details;
+        originalReady = loadFilmDetails(imdbIdField.value, filmEl._film)
+          .then(function (d) {
             if (!d) return;
             if (!originalQueryInput.value) originalQueryInput.value = d.originalName || '';
             if (d.overview) document.getElementById('film-overview').textContent = d.overview;
