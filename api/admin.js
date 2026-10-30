@@ -842,6 +842,8 @@ function addStyles() {
   .empty-box .icon { margin: 0 auto 10px; color: var(--text-mute); }
   .skeleton-row { height: 90px; border-radius: 12px; }
 
+  .savebar[hidden] { display: none; }
+  .savebar { animation: fade-up 0.25s ease both; }
   .savebar { position: sticky; bottom: 16px; z-index: 50; margin-top: 8px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
     padding: 14px 16px 14px 20px; border-radius: 18px; background: rgba(31,28,40,0.88); backdrop-filter: saturate(160%) blur(18px); -webkit-backdrop-filter: saturate(160%) blur(18px);
     border: 1px solid var(--line-strong); box-shadow: 0 20px 50px -14px rgba(0,0,0,0.85); }
@@ -855,7 +857,8 @@ function addStyles() {
   .save-note.local { color: var(--gold); }
 
   @media (max-width: 760px) {
-    main { padding: 18px 14px calc(var(--bottomnav-h) + var(--safe-b) + 210px); }
+    main { padding: 18px 14px calc(var(--bottomnav-h) + var(--safe-b) + 32px); }
+    body.has-savebar main { padding-bottom: calc(var(--bottomnav-h) + var(--safe-b) + 230px); }
     .page-title { font-size: 2.1rem; }
     .page-sub { font-size: 0.9rem; margin-bottom: 18px; }
     .step { padding: 18px 16px; border-radius: 18px; }
@@ -1010,7 +1013,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         </div>
       </section>
 
-      <div class="savebar">
+      <div class="savebar" id="savebar"${film ? "" : " hidden"}>
         <div class="save-summary">
           <div class="what" id="save-what">${v.title ? escapeHtml(v.title) : "Elige una película"}</div>
           <div class="sub" id="save-sub">${editing ? "Se conservará la copia actual" : "y una copia para poder guardar"}</div>
@@ -1076,6 +1079,10 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       function updateSummary() {
         var title = titleField.value;
         var hasFilm = editing || (!!title && !!imdbIdField.value);
+        // La barra de guardar solo aparece con una película ya elegida.
+        var showBar = editing || !!title;
+        document.getElementById('savebar').hidden = !showBar;
+        document.body.classList.toggle('has-savebar', showBar);
         var hasCopy = !!magnetInput.value.trim();
         document.getElementById('step1-num').classList.toggle('done', hasFilm);
         document.getElementById('step2-num').classList.toggle('done', hasCopy || editing);
