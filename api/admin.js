@@ -749,6 +749,9 @@ ${headTags("Biblioteca · JFuster RD")}
             if (current !== it) return;
             if (data.error) { showPlayerMessage(esc(data.error)); return; }
             showExternal(data);
+            // Un MP4 lo reproduce el navegador tal cual: arranca al momento y
+            // se adelanta sin esperas, así que no hace falta la conversión.
+            if (data.download && /\\.(mp4|m4v|mov)$/i.test(data.filename || '')) data.hls = null;
             if (!data.hls) return startVideo(it, data);
             showPlayerMessage('<span class="spinner"></span> Real-Debrid está preparando el vídeo… con películas 4K puede tardar hasta un minuto.');
             warmUp(data.hls).then(function () {
