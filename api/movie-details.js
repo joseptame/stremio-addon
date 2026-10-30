@@ -7,6 +7,7 @@ const { isAuthenticated } = require("../lib/adminAuth");
 // - { imdbId, type }: sinopsis, datos y tráiler de TMDB.
 // - { action: "play", infoHash }: enlace para reproducir la película con
 //   la primera cuenta de RD (en el orden de RD_ACCOUNTS) que la tenga lista.
+// Y por GET, la lista HLS recortada para el reproductor (trimmedPlaylist).
 async function playStream(res, infoHash) {
     if (!infoHash || !/^[0-9a-fA-F]{40}$/.test(String(infoHash))) {
         return res.status(400).json({ error: "infoHash inválido." });
@@ -22,7 +23,58 @@ async function playStream(res, infoHash) {
     return res.status(404).json({ error: "Ninguna cuenta de Real-Debrid la tiene lista todavía." });
 }
 
+// GET ?hls=<lista de RD>: la misma lista HLS sin el primer fragmento. En
+// RD ese fragmento es el que arranca la conversión: tarda ~1 min y vuelve
+// vacío o con 503, y el reproductor se queda parado en él. El panel lo pide
+// antes por su cuenta y le pasa al reproductor esta lista, que empieza en
+// el segundo (ya listo al momento). Sin sesión: la URL de RD ya es el
+// secreto y solo se aceptan listas de real-debrid.com.
+async function trimmedPlaylist(res, hlsUrl) {
+    let url;
+    try {
+        url = new URL(String(hlsUrl));
+    } catch {
+        return res.status(400).end();
+    }
+    if (url.protocol !== "https:" || !/(^|\.)real-debrid\.com$/.test(url.hostname) || !/\.m3u8$/.test(url.pathname)) {
+        return res.status(400).end();
+    }
+    const upstream = await fetch(url.href);
+    if (!upstream.ok) return res.status(502).end();
+    const lines = (await upstream.text()).split(/\r?\n/);
+
+    let skipped = false;
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!skipped && line.startsWith("#EXTINF")) {
+            skipped = true;
+            i++; // y la URI del fragmento que va justo después
+            continue;
+        }
+        if (line.startsWith("#EXT-X-MEDIA-SEQUENCE")) {
+            out.push("#EXT-X-MEDIA-SEQUENCE:1");
+        } else if (line && !line.startsWith("#")) {
+            out.push(new URL(line, url.href).href);
+        } else {
+            out.push(line);
+        }
+    }
+
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    return res.status(200).send(out.join("\n"));
+}
+
 module.exports = async (req, res) => {
+    if (req.method === "GET" && req.query && req.query.hls) {
+        try {
+            return await trimmedPlaylist(res, req.query.hls);
+        } catch {
+            return res.status(502).end();
+        }
+    }
+
     res.setHeader("Content-Type", "application/json");
 
     if (req.method !== "POST") {

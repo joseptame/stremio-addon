@@ -621,13 +621,17 @@ ${headTags("Biblioteca · JFuster RD")}
         sheetEl.classList.add('playing');
       }
 
-      // RD convierte el vídeo bajo demanda: con fuentes 4K el primer
-      // fragmento puede tardar hasta ~1 min (los siguientes llegan al
-      // momento). Se pide antes de abrir el reproductor para que este no
-      // se rinda esperando; RD sirve el HLS con CORS abierto.
+      // RD convierte el vídeo bajo demanda: pedir el primer fragmento es lo
+      // que arranca la conversión. Vuelve al momento pero vacío (o con 503),
+      // y la petición siguiente se queda esperando ~1 min con fuentes 4K
+      // mientras RD se pone en marcha; a partir de ahí todo llega al
+      // momento. Esa espera se hace aquí (fragmento 0 y la lista otra vez) y
+      // el reproductor recibe la lista sin el fragmento 0 (ver
+      // trimmedPlaylist en /api/movie-details), para que no se quede parado
+      // en él. RD sirve el HLS con CORS abierto.
       function warmUp(hlsUrl) {
         var controller = window.AbortController ? new AbortController() : null;
-        var timer = setTimeout(function () { if (controller) controller.abort(); }, 90000);
+        var timer = setTimeout(function () { if (controller) controller.abort(); }, 150000);
         var opts = controller ? { signal: controller.signal } : {};
         return fetch(hlsUrl, opts)
           .then(function (r) { return r.text(); })
@@ -636,6 +640,8 @@ ${headTags("Biblioteca · JFuster RD")}
             if (!first) return;
             return fetch(new URL(first, hlsUrl).href, opts).then(function (r) { return r.arrayBuffer(); });
           })
+          .then(function () { return fetch(hlsUrl, opts); })
+          .then(function (r) { return r.arrayBuffer(); })
           .catch(function () {})
           .then(function () { clearTimeout(timer); });
       }
@@ -716,7 +722,10 @@ ${headTags("Biblioteca · JFuster RD")}
             showExternal(data);
             if (!data.hls) return startVideo(it, data);
             showPlayerMessage('<span class="spinner"></span> Real-Debrid está preparando el vídeo… con películas 4K puede tardar hasta un minuto.');
-            warmUp(data.hls).then(function () { startVideo(it, data); });
+            warmUp(data.hls).then(function () {
+              data.hls = '/api/movie-details?hls=' + encodeURIComponent(data.hls);
+              startVideo(it, data);
+            });
           })
           .catch(function () {
             if (current === it) showPlayerMessage('No se pudo preparar la reproducción ahora mismo.');
