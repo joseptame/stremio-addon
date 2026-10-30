@@ -1503,6 +1503,13 @@ async function writeImdbStreamsToGitHub(ghHeaders, apiUrl, data, sha, message) {
     }
 }
 
+// Texto para el aviso de guardado cuando RD rechaza dar de alta el torrent.
+function rdErrorText(code) {
+    if (code === "infringing_file") return "RD tiene bloqueada esta copia por derechos de autor, elige otra";
+    if (code === "too_many_active_downloads") return "RD tiene demasiadas descargas activas en esta cuenta";
+    return `RD rechazó la copia (${code})`;
+}
+
 // Estado de RD de cada cuenta de RD_ACCOUNTS, para pintar el progreso en
 // el listado. Una sola llamada por cuenta (la lista completa de torrents),
 // no una por película — así da igual cuántas películas haya.
@@ -1679,6 +1686,7 @@ module.exports = async (req, res) => {
             .map((acc) => ({ label: acc.id, key: process.env[acc.envVar] }));
 
         let rdNote = "";
+        let rdRejected = false;
         if (rdAccounts.length > 0) {
             // Si el magnet viene de un resultado de Prowlarr, se vuelve a
             // descargar el .torrent real y se sube tal cual a RD en vez de
@@ -1700,6 +1708,10 @@ module.exports = async (req, res) => {
                 if (!acc.key) return `${acc.label}: falta configurar su clave en el servidor`;
                 const rdResult = await triggerRealDebridCache(acc.key, parsed.infoHash, parsed.sources, torrentBuffer);
                 if (!rdResult) return `${acc.label}: no se pudo contactar con RD`;
+                if (rdResult.error) {
+                    rdRejected = true;
+                    return `${acc.label}: ${rdErrorText(rdResult.error)}`;
+                }
                 return rdResult.cached
                     ? `${acc.label}: ya cacheado, listo al instante`
                     : `${acc.label}: pedido a RD, puede tardar según seeders`;
@@ -1708,7 +1720,9 @@ module.exports = async (req, res) => {
         }
 
         const commitNote = commitSha ? ` Commit <code>${escapeHtml(commitSha.slice(0, 7))}</code>.` : "";
-        const successMsg = `<div class="msg ok">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${commitNote}${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
+        // Si RD rechazó la copia en alguna cuenta, el aviso sale como error:
+        // la película se guarda, pero no se va a poder reproducir por RD.
+        const successMsg = `<div class="msg ${rdRejected ? "err" : "ok"}">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${commitNote}${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
         // Se renderiza aquí mismo con "current" (recién escrito) en vez de
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
