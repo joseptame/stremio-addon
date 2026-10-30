@@ -634,10 +634,10 @@ ${headTags("Biblioteca · JFuster RD")}
         stopTrailer();
         showPlayerMessage('<span class="spinner"></span> Preparando la película en Real-Debrid…');
         sheetEl.scrollTop = 0;
-        fetch('/api/movie-play', {
+        fetch('/api/movie-details', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ infoHash: it.infoHash }),
+          body: JSON.stringify({ action: 'play', infoHash: it.infoHash }),
         })
           .then(function (res) { return res.json(); })
           .then(function (data) {
