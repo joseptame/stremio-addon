@@ -6,7 +6,7 @@ const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { escapeHtml, icon, headTags, themeCss, isLocal, renderTopBar, renderBottomNav } = require("../lib/ui");
 const { checkWish, readWishlist, writeWishlist } = require("../lib/wishlist");
-const { seasonLabel, entryCopies, entryHashes } = require("../lib/series");
+const { seasonLabel, copyKey, parseKey, entryCopies, entryHashes } = require("../lib/series");
 
 // Lista de deseos tal como está en este despliegue (cada cambio es un
 // commit y Vercel redespliega en ~1 min; tras añadir o quitar se pinta con
@@ -97,6 +97,10 @@ function libraryStyles() {
   .season-item .dl { color: var(--gold); font-weight: 600; }
   .season-item .bad { color: var(--err); font-weight: 600; }
   .season-item a { color: var(--text-dim); font-size: 0.8rem; text-decoration: underline; }
+  .season-item .muted { color: var(--text-mute); font-size: 0.8rem; }
+  .season-block { display: grid; gap: 6px; }
+  .season-item.episode { margin-left: 18px; padding: 8px 14px; font-size: 0.82rem; background: transparent; }
+  .season-add-ep { margin-left: 18px; font-size: 0.78rem; color: var(--text-dim); text-decoration: underline; }
   .season-empty { margin: 0 0 12px; font-size: 0.84rem; color: var(--text-mute); }
   .season-add { min-height: 36px; font-size: 0.82rem; }
   .account-alert { margin-top: 18px; }
@@ -731,13 +735,36 @@ ${headTags("Biblioteca · JFuster RD")}
         if (box.hidden) return;
         var edit = '/admin/add?edit=' + encodeURIComponent(it.id) + '&season=';
         var list = it.seasons || [];
-        document.getElementById('season-list').innerHTML = list.length ? list.map(function (s) {
-          var state = s.group === 'ready' ? '<span class="ok">✓ Lista</span>'
+        function state(s) {
+          return s.group === 'ready' ? '<span class="ok">✓ Lista</span>'
             : s.group === 'downloading' ? '<span class="dl">' + s.pct + '%</span>' : '<span class="bad">Revisar</span>';
-          return '<div class="season-item"><b>' + esc(s.label) + '</b>' + state +
-            '<a href="' + edit + encodeURIComponent(s.key) + '">Cambiar</a></div>';
+        }
+        // Agrupadas por temporada: su pack (si lo tiene) y debajo sus
+        // capítulos sueltos ("2:5"), con "Añadir capítulo" para completarla.
+        var bySeason = {};
+        var order = [];
+        list.forEach(function (s) {
+          var season = s.key === 'all' ? 'all' : String(s.key).split(':')[0];
+          if (!bySeason[season]) { bySeason[season] = { pack: null, eps: [] }; order.push(season); }
+          if (String(s.key).indexOf(':') !== -1) bySeason[season].eps.push(s);
+          else bySeason[season].pack = s;
+        });
+        document.getElementById('season-list').innerHTML = order.length ? order.map(function (season) {
+          var g = bySeason[season];
+          var title = season === 'all' ? 'Serie completa' : 'Temporada ' + season;
+          var head = '<div class="season-item"><b>' + esc(title) + '</b>' +
+            (g.pack ? state(g.pack) + '<a href="' + edit + encodeURIComponent(g.pack.key) + '">Cambiar</a>'
+              : '<span class="muted">Sin pack</span><span></span>') + '</div>';
+          if (season === 'all') return head;
+          var eps = g.eps.map(function (s) {
+            var ep = String(s.key).split(':')[1];
+            return '<div class="season-item episode"><b>Capítulo ' + esc(ep) + '</b>' + state(s) +
+              '<a href="' + edit + encodeURIComponent(season) + '&episode=' + encodeURIComponent(ep) + '">Cambiar</a></div>';
+          }).join('');
+          var addEp = '<a class="season-add-ep" href="' + edit + encodeURIComponent(season) + '&episode=">+ Añadir capítulo a la temporada ' + esc(season) + '</a>';
+          return '<div class="season-block">' + head + eps + addEp + '</div>';
         }).join('') : '<p class="season-empty">Aún sin temporadas.</p>';
-        var numbers = list.map(function (s) { return Number(s.key); }).filter(function (n) { return n > 0; });
+        var numbers = order.map(Number).filter(function (n) { return n > 0; });
         document.getElementById('season-add').href = edit + (numbers.length ? Math.max.apply(null, numbers) + 1 : 1);
       }
 
@@ -1481,7 +1508,9 @@ function addStyles() {
   .wish-box[hidden] { display: none; }
   .season-row { margin: 0 0 18px; }
   .season-row[hidden] { display: none; }
-  .season-row .select { width: 100%; max-width: 320px; }
+  .season-fields { display: flex; gap: 10px; max-width: 460px; }
+  .season-fields .select { flex: 1.4; min-width: 0; }
+  .season-fields .input { flex: 1; min-width: 0; }
   .season-group { margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
   .season-group > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 16px; cursor: pointer; list-style: none; }
   .season-group > summary::-webkit-details-marker { display: none; }
@@ -1657,8 +1686,11 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
 
         <div class="season-row" id="season-row"${isSeries ? "" : " hidden"}>
           <label class="field-label" for="season-field">Temporada de esta copia</label>
-          <select class="select" name="season" id="season-field">${seasonOptions(Math.max(1, ...existingSeasons.filter((k) => k !== "all").map(Number), Number(v.season) || 1), existingSeasons, v.season)}</select>
-          <p class="hint">Cada temporada lleva su propia copia; elige "Serie completa" si el torrent trae todas.</p>
+          <div class="season-fields">
+            <select class="select" name="season" id="season-field">${seasonOptions(Math.max(1, ...existingSeasons.filter((k) => k !== "all").map((k) => parseKey(k).season), Number(v.season) || 1), existingSeasons, v.season)}</select>
+            <input class="input" type="number" min="1" inputmode="numeric" name="episode" id="episode-field" value="${escapeHtml(v.episode || "")}" placeholder="Capítulo (opcional)" aria-label="Capítulo">
+          </div>
+          <p class="hint">Sin capítulo, la copia es para toda la temporada ("Serie completa" si trae todas). Con capítulo, es un capítulo suelto: puedes añadir varios por temporada.</p>
         </div>
 
         <div id="manual-panel">
@@ -1876,8 +1908,18 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         if (!sel.value) sel.value = '1';
       }
 
+      // Con "Serie completa" no hay capítulo.
+      function syncEpisodeField() {
+        var ep = document.getElementById('episode-field');
+        var all = document.getElementById('season-field').value === 'all';
+        ep.disabled = all;
+        if (all) ep.value = '';
+      }
+      syncEpisodeField();
+
       // Al cambiar de temporada se abre su grupo en la lista de copias.
       document.getElementById('season-field').addEventListener('change', function () {
+        syncEpisodeField();
         if (lastResults.length && contentType() === 'series') renderReleases();
       });
 
@@ -2238,7 +2280,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             '<div class="season-group-body">' +
               g.packs.map(function (x) { return releaseRow(x.r, n++); }).join('') +
               (g.eps.length ? '<details class="ep-group"' + (g.packs.length ? '' : ' open') + '><summary>Capítulos sueltos (' + g.eps.length + ')</summary>' +
-                '<p class="ep-note">Cada temporada guarda una sola copia: un capítulo suelto solo servirá para ese episodio.</p>' +
+                '<p class="ep-note">Se guardan como capítulos sueltos: puedes añadir varios de la misma temporada.</p>' +
                 g.eps.map(function (x) { return releaseRow(x.r, n++); }).join('') + '</details>' : '') +
             '</div></details>';
         }).join('');
@@ -2267,10 +2309,13 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         // privados, donde a veces RD no consigue negociar metadatos).
         downloadRefField.value = r.downloadRef || '';
         // En series, el selector de temporada pasa a la de esta copia.
+        // y, si es un capítulo suelto, el capítulo (si no, se vacía).
         if (contentType() === 'series') {
           var info = seriesInfo(r.title);
           var sel = document.getElementById('season-field');
           if (info.season && sel.querySelector('option[value="' + info.season + '"]')) sel.value = info.season;
+          document.getElementById('episode-field').value = info.episode && info.season !== 'all' ? info.episode : '';
+          syncEpisodeField();
         }
         markSelected(row);
         updateSummary();
@@ -2505,6 +2550,7 @@ module.exports = async (req, res) => {
                     poster: entry ? (entry.poster || "") : wish ? wish.poster : "",
                     type: entry ? (entry.type || "movie") : wish ? wish.type : "movie",
                     season: /^(all|\d+)$/.test(String(req.query.season || "")) ? String(req.query.season) : "1",
+                    episode: /^\d+$/.test(String(req.query.episode || "")) ? String(req.query.episode) : "",
                     rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
                     prowlarrMode: !editId,
                 },
@@ -2521,7 +2567,7 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, action, prowlarrMode, downloadRef, type, season } = req.body || {};
+    const { imdbId, magnet, title, action, prowlarrMode, downloadRef, type, season, episode } = req.body || {};
     const rdCache = {};
     RD_ACCOUNTS.forEach((acc) => { rdCache[acc.id] = !!(req.body || {})["rdCache" + acc.id]; });
     const contentType = type === "series" ? "series" : "movie";
@@ -2615,6 +2661,7 @@ module.exports = async (req, res) => {
         magnet: magnet || "",
         type: contentType,
         season: String(season || "1"),
+        episode: /^\d+$/.test(String(episode || "")) ? String(episode) : "",
         rdCache,
         prowlarrMode: prowlarrMode === "1",
     };
@@ -2646,9 +2693,8 @@ module.exports = async (req, res) => {
         const { data: current, sha, apiUrl } = await readImdbStreamsFromGitHub(ghHeaders);
         const existing = current[imdbId];
         // Series: cada copia va en su temporada ("all" = serie completa).
-        const seasonKey = contentType === "series"
-            ? (/^\d+$/.test(String(season || "")) ? String(Number(season)) : "all")
-            : null;
+        // (o un capítulo suelto suyo, "2:5"; ver copyKey).
+        const seasonKey = contentType === "series" ? copyKey(season, episode) : null;
         const existingSeasonCopy = seasonKey ? entryCopies(existing).find((c) => c.key === seasonKey) : null;
 
         let parsed;

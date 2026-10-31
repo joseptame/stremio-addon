@@ -1,6 +1,6 @@
 const { CORTOS, IMDB_STREAMS } = require("../../../lib/data");
 const { resolveRealDebridLink, parseRdKeyFromConfig } = require("../../../lib/realdebrid");
-const { copyForSeason } = require("../../../lib/series");
+const { copyForEpisode } = require("../../../lib/series");
 
 module.exports = async (req, res) => {
     res.setHeader("Content-Type", "application/json");
@@ -33,16 +33,19 @@ module.exports = async (req, res) => {
         const s = IMDB_STREAMS[baseId];
         name = "JFuster RD";
         directUrl = s.url || null;
-        // Series (ttXXX:T:E): la copia de esa temporada (o el pack completo)
-        // y, dentro, el fichero de ese episodio.
+        // Series (ttXXX:T:E): su capítulo suelto, o el pack de su temporada,
+        // o el de la serie completa; y dentro del pack, el fichero de ese
+        // episodio (en un capítulo suelto, su vídeo sin más).
         const [, season, ep] = id.split(":");
         if (season && ep) {
-            const copy = copyForSeason(s, season);
+            const copy = copyForEpisode(s, season, ep);
             if (!copy) return res.status(200).json({ streams: [] });
             infoHash = copy.infoHash.toLowerCase();
             sources = copy.sources;
             title = `${s.title || s.name} · T${season}E${ep}`;
-            episode = { season, episode: ep, singleSeason: copy.key !== "all" };
+            episode = copy.key.includes(":")
+                ? { season, episode: ep, anyFile: true }
+                : { season, episode: ep, singleSeason: copy.key !== "all" };
         } else {
             infoHash = s.infoHash.toLowerCase();
             sources = s.sources;
