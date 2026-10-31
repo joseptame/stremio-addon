@@ -1,0 +1,20 @@
+# Cada 15 minutos, pide al panel que mire si alguna descarga de Real-Debrid
+# ha terminado y, si es así, mande el aviso push (ver "cron=downloads" en
+# api/movie-details.js). Los cron de Vercel en el plan gratuito solo pueden
+# ser diarios; GitHub Actions es gratis en repos públicos.
+name: Avisos de descargas de Real-Debrid
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Comprobar descargas terminadas
+        run: |
+          curl -fsS --max-time 60 -A "filmrd-actions" \
+            "https://stremio-addon-green.vercel.app/api/movie-details?cron=downloads"
