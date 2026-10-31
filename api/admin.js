@@ -5,6 +5,20 @@ const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { escapeHtml, icon, headTags, themeCss, isLocal, renderTopBar, renderBottomNav } = require("../lib/ui");
+const { WISHLIST_PATH, checkWish, readWishlist, writeWishlist } = require("../lib/wishlist");
+const fs = require("fs");
+const path = require("path");
+
+// Lista de deseos tal como está en este despliegue (cada cambio es un
+// commit y Vercel redespliega en ~1 min; tras añadir o quitar se pinta con
+// la que se acaba de escribir).
+function bundledWishlist() {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(__dirname, "..", WISHLIST_PATH), "utf-8"));
+    } catch {
+        return {};
+    }
+}
 
 const OWNER = "joseptame";
 const REPO = "stremio-addon";
@@ -77,6 +91,9 @@ function libraryStyles() {
   .tape-badge.none { color: var(--text-dim); }
   .tape-badge.review { color: var(--err); }
   .account-alert { margin-top: 18px; }
+  .wish-row { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
+  .tape.wish { text-decoration: none; color: inherit; }
+  .wish-year { color: var(--text-mute); font-weight: 400; }
   .accounts { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
   .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   .acc-card { padding: 16px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--line); }
@@ -263,6 +280,66 @@ const LIBRARY_ROWS = [
     { group: "review", title: "Revisar", hint: "Sin fuentes, con error o fuera de Real-Debrid: ábrela y busca otra copia." },
 ];
 
+// ── Lista de deseos ──
+// Películas apuntadas para buscarlas cada día. Tocarlas abre Añadir con la
+// película ya elegida y la búsqueda hecha. Cuando una pasa a tener copias
+// buenas, un aviso al abrir la biblioteca (una vez por cambio, recordado
+// en el navegador).
+function renderWishlist(wishlist) {
+    const wishes = Object.values(wishlist || {}).sort((a, b) => Date.parse(b.addedAt || 0) - Date.parse(a.addedAt || 0));
+    if (!wishes.length) return "";
+    const card = (w) => {
+        const poster = w.poster || `https://images.metahub.space/poster/medium/${encodeURIComponent(w.imdbId)}/img`;
+        const sub = w.best
+            ? `Mejor: ${w.best.quality} · ${w.best.seeders} seeders`
+            : "Aún sin copias buenas";
+        return `<a class="tape wish" href="/admin/add?wish=${encodeURIComponent(w.imdbId)}" aria-label="${escapeHtml(w.name)}">
+            <div class="tape-poster">
+              <img src="${escapeHtml(poster)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tape-placeholder" style="display:none">${icon("film", 30)}${escapeHtml(w.name)}</div>
+              ${w.count
+                ? `<span class="tape-badge ready">${icon("check", 12)} ${w.count} copia${w.count === 1 ? "" : "s"}</span>`
+                : `<span class="tape-badge downloading">Buscando…</span>`}
+            </div>
+            <div class="tape-title">${escapeHtml(w.name)}${w.year ? ` <span class="wish-year">(${escapeHtml(w.year)})</span>` : ""}</div>
+            <div class="tape-sub">${escapeHtml(sub)}</div>
+          </a>`;
+    };
+    const found = wishes.filter((w) => w.count).map((w) => ({ id: w.imdbId, name: w.name, count: w.count }));
+    return `<section class="wish-row" aria-label="Lista de deseos">
+      <div class="row-head">
+        <h3 class="row-title">Lista de deseos <span class="count">${wishes.length}</span></h3>
+        <p class="row-hint">Las busco cada día; tócala para ver las copias.</p>
+      </div>
+      <div class="grid">${wishes.map(card).join("")}</div>
+      <script>
+        (function () {
+          var found = ${JSON.stringify(found).replace(/</g, "\\u003c")};
+          var news = found.filter(function (w) {
+            try {
+              var key = 'wish-seen:' + w.id;
+              if (localStorage.getItem(key) === String(w.count)) return false;
+              localStorage.setItem(key, String(w.count));
+              return true;
+            } catch (e) { return false; }
+          });
+          if (!news.length) return;
+          var t = document.createElement('div');
+          t.className = 'toast';
+          t.setAttribute('role', 'status');
+          var text = news.length === 1
+            ? 'Hay copias nuevas para «' + news[0].name + '» en tu lista de deseos.'
+            : 'Hay copias nuevas para ' + news.length + ' películas de tu lista de deseos.';
+          t.innerHTML = '<div class="msg ok"></div>';
+          t.firstChild.textContent = text;
+          document.body.appendChild(t);
+          function close() { t.classList.add('toast-out'); setTimeout(function () { t.remove(); }, 300); }
+          t.addEventListener('click', close);
+          setTimeout(close, 7000);
+        })();
+      </script>
+    </section>`;
+}
+
 // ── Cuentas de Real-Debrid ──
 // Días de premium que quedan y descargas activas de cada cuenta. Con 7
 // días o menos se avisa también arriba de la biblioteca.
@@ -321,7 +398,7 @@ function renderTape(it, i) {
           </button>`;
 }
 
-function renderListPage({ message, imdbStreams, rdMaps, accountInfos }) {
+function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist }) {
     const entries = Object.entries(imdbStreams);
     const items = entries.map(([imdbId, s]) => {
         const summary = rdSummary(s, rdMaps);
@@ -443,6 +520,7 @@ ${headTags("Biblioteca · JFuster RD")}
       </div>` : ""}
       ${grid}
     </section>
+    ${renderWishlist(wishlist)}
     ${renderAccounts(accountInfos)}
   </main>
   </div>
@@ -1378,6 +1456,9 @@ function addStyles() {
   .release.selected .release-go { background: var(--accent); border-color: var(--accent); color: #fff; }
   .release-go.err { color: var(--err); border-color: rgba(255,107,129,0.4); }
   .release.other-year:not(.selected) { opacity: 0.5; }
+  .wish-box { margin-top: 18px; padding: 16px; border-radius: var(--radius-sm); border: 1px dashed var(--line); background: var(--surface); }
+  .wish-box[hidden] { display: none; }
+  .wish-box p { margin: 0 0 12px; font-size: 0.86rem; line-height: 1.5; color: var(--text-dim); }
   .other-note { margin-top: 6px; font-size: 0.74rem; color: var(--gold); }
   .empty-box { padding: 34px 16px; text-align: center; color: var(--text-dim); font-size: 0.9rem; border: 1px dashed var(--line-strong); border-radius: 12px; }
   .empty-box .icon { margin: 0 auto 10px; color: var(--text-mute); }
@@ -1427,7 +1508,7 @@ function addStyles() {
 }
 
 // ── Página de añadir / editar (ficha con portada + búsqueda) ──────
-function renderAddPage({ message, editId, values }) {
+function renderAddPage({ message, editId, values, wish }) {
     const editing = !!editId;
     const v = Object.assign({
         imdbId: "", title: "", magnet: "", poster: "", type: "movie",
@@ -1554,6 +1635,13 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
           <div class="releases" id="releases">
             <div class="empty-box">${icon("film", 28)}Elige una película arriba o escribe un título y pulsa Buscar.</div>
           </div>
+          <div class="wish-box" id="wish-box" hidden>
+            ${wish
+              ? `<p>Está en tu <b>lista de deseos</b>: la busco cada día.${wish.count ? ` Hoy hay ${wish.count} copia${wish.count === 1 ? "" : "s"} que podrían valer.` : ""}</p>
+            <button type="button" class="btn btn-ghost" id="wish-remove">${icon("x", 16)} Quitar de la lista de deseos</button>`
+              : `<p>¿Ninguna copia te convence? Apúntala y la buscaré cada día; te avisaré en la biblioteca cuando aparezca una buena.</p>
+            <button type="button" class="btn btn-ghost" id="wish-add">☆ Añadir a la lista de deseos</button>`}
+          </div>
         </div>
       </section>
 
@@ -1571,6 +1659,15 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             ? "Estás en local, pero guardar hace un commit real al repo y Vercel redespliega producción (~1 min)."
             : "Al guardar se hace un commit al repo y Vercel redespliega (~1 min)."}</p>
       </div>
+    </form>
+    <form method="POST" action="/admin" id="wish-form" style="display:none">
+      <input type="hidden" name="action" id="wish-action">
+      <input type="hidden" name="imdbId" id="wish-imdb">
+      <input type="hidden" name="name" id="wish-name">
+      <input type="hidden" name="originalName" id="wish-original">
+      <input type="hidden" name="year" id="wish-year">
+      <input type="hidden" name="type" id="wish-type">
+      <input type="hidden" name="poster" id="wish-poster">
     </form>
   </main>
 
@@ -1635,7 +1732,34 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       function prowlarrMode() { return modeField.value === '1'; }
 
       // ── Resumen de la barra de guardar ──
+      // ── Lista de deseos ──
+      // Con una película elegida (y aún no en el catálogo), debajo de las
+      // copias se ofrece apuntarla para buscarla cada día.
+      function updateWishBox() {
+        var box = document.getElementById('wish-box');
+        if (box) box.hidden = editing || !imdbIdField.value || !prowlarrMode();
+      }
+      function submitWish(action) {
+        var film = filmEl._film || {};
+        document.getElementById('wish-action').value = action;
+        document.getElementById('wish-imdb').value = imdbIdField.value;
+        document.getElementById('wish-name').value = titleField.value;
+        document.getElementById('wish-original').value = originalQueryInput.value;
+        document.getElementById('wish-year').value = filmYear;
+        document.getElementById('wish-type').value = contentType();
+        document.getElementById('wish-poster').value = film.posterLarge || film.poster || '';
+        var btn = document.getElementById(action === 'wish-add' ? 'wish-add' : 'wish-remove');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> ' + (action === 'wish-add' ? 'Añadiendo y buscando…' : 'Quitando…');
+        document.getElementById('wish-form').submit();
+      }
+      ['wish-add', 'wish-remove'].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b) b.addEventListener('click', function () { submitWish(id); });
+      });
+
       function updateSummary() {
+        updateWishBox();
         var title = titleField.value;
         var hasFilm = editing || (!!title && !!imdbIdField.value);
         // La barra de guardar solo aparece con película y copia elegidas
@@ -2190,21 +2314,25 @@ module.exports = async (req, res) => {
         if (isAddPage) {
             const editId = req.query.edit && IMDB_STREAMS[req.query.edit] ? req.query.edit : null;
             const entry = editId ? IMDB_STREAMS[editId] : null;
+            // Desde la lista de deseos: la película ya elegida y la búsqueda
+            // de copias lanzada, como al volver de un error al guardar.
+            const wish = !editId && req.query.wish ? bundledWishlist()[req.query.wish] : null;
             return res.status(200).send(renderAddPage({
                 editId,
+                wish,
                 values: {
-                    imdbId: editId || "",
-                    title: entry ? (entry.title || "") : "",
+                    imdbId: editId || (wish ? wish.imdbId : ""),
+                    title: entry ? (entry.title || "") : wish ? wish.name : "",
                     magnet: "",
-                    poster: entry ? (entry.poster || "") : "",
-                    type: entry ? (entry.type || "movie") : "movie",
+                    poster: entry ? (entry.poster || "") : wish ? wish.poster : "",
+                    type: entry ? (entry.type || "movie") : wish ? wish.type : "movie",
                     rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
                     prowlarrMode: !editId,
                 },
             }));
         }
         const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
-        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos }));
+        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist: bundledWishlist() }));
     }
 
     if (req.method !== "POST") {
@@ -2220,6 +2348,45 @@ module.exports = async (req, res) => {
     const contentType = type === "series" ? "series" : "movie";
 
     // ── Eliminar (siempre vuelve al listado) ───────────────────
+    // ── Lista de deseos ──
+    if (action === "wish-add" || action === "wish-remove") {
+        const listPage = async (wishlist, message, status = 200) => {
+            const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
+            return res.status(status).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist, message }));
+        };
+        try {
+            if (!/^tt[0-9]+$/.test(String(imdbId || ""))) throw new Error("ID de IMDb inválido.");
+            const { data: wishlist, sha } = await readWishlist();
+            if (action === "wish-remove") {
+                const name = wishlist[imdbId] ? wishlist[imdbId].name : imdbId;
+                delete wishlist[imdbId];
+                await writeWishlist(wishlist, sha, `Quitar ${imdbId} de la lista de deseos vía panel admin`);
+                return await listPage(wishlist, `<div class="msg ok"><b>«${escapeHtml(name)}»</b> quitada de la lista de deseos.</div>`);
+            }
+            const b = req.body || {};
+            const wish = {
+                imdbId,
+                name: String(b.name || title || imdbId).trim(),
+                originalName: String(b.originalName || "").trim(),
+                year: /^\d{4}$/.test(String(b.year || "")) ? String(b.year) : "",
+                type: type === "series" ? "series" : "movie",
+                poster: String(b.poster || ""),
+                addedAt: new Date().toISOString(),
+            };
+            // Primera búsqueda ya, para que se vea al momento si hay algo.
+            let result = { count: 0, best: null };
+            try { result = await checkWish(wish); } catch { /* la tarea diaria lo reintentará */ }
+            wishlist[imdbId] = { ...wish, ...result, lastChecked: new Date().toISOString() };
+            await writeWishlist(wishlist, sha, `Añadir ${imdbId} a la lista de deseos vía panel admin`);
+            const found = result.count
+                ? ` Ya hay ${result.count} copia${result.count === 1 ? "" : "s"} que podrían valer.`
+                : " La buscaré cada día y te avisaré aquí cuando aparezca una copia buena.";
+            return await listPage(wishlist, `<div class="msg ok"><b>«${escapeHtml(wish.name)}»</b> añadida a la lista de deseos.${found}</div>`);
+        } catch (err) {
+            return await listPage(bundledWishlist(), `<div class="msg err">${escapeHtml(err.message)}</div>`, 500);
+        }
+    }
+
     if (action === "delete") {
         if (!process.env.GITHUB_TOKEN) {
             return res.status(500).send(renderListPage({
@@ -2377,6 +2544,19 @@ module.exports = async (req, res) => {
             sha,
             `${existing ? "Editar" : "Añadir"} stream para ${imdbId} vía panel admin`
         );
+        // Si estaba en la lista de deseos, ya no hace falta seguir buscándola.
+        let wishlistNow;
+        try {
+            const { data: wl, sha: wlSha } = await readWishlist();
+            if (wl[imdbId]) {
+                delete wl[imdbId];
+                await writeWishlist(wl, wlSha, `Quitar ${imdbId} de la lista de deseos (ya está en el catálogo)`);
+            }
+            wishlistNow = wl;
+        } catch {
+            // Si falla, se queda en la lista; se puede quitar a mano.
+        }
+
         // Al cambiar de copia, la anterior se borra de RD si ya no la usa nadie.
         const oldCopyNote = existing && existing.infoHash && existing.infoHash.toLowerCase() !== parsed.infoHash.toLowerCase()
             ? ((await removeFromRdIfUnused(existing.infoHash, current)) ? " Copia anterior borrada de RD." : "")
@@ -2389,7 +2569,7 @@ module.exports = async (req, res) => {
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
         const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
-        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps, accountInfos }));
+        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps, accountInfos, wishlist: wishlistNow }));
     } catch (err) {
         return addPageError(500, `<div class="msg err">${escapeHtml(err.message)}</div>`);
     }

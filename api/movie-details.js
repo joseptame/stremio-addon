@@ -1,6 +1,7 @@
 const { getDetailsByImdb } = require("../lib/tmdb");
 const { RD_ACCOUNTS, getPlayableStream, accountStates, loadAccountMaps } = require("../lib/realdebrid");
 const { isAuthenticated } = require("../lib/adminAuth");
+const { runWishlistCheck } = require("../lib/wishlist");
 
 // Dos usos desde la ficha del panel (en un solo endpoint porque el plan
 // Hobby de Vercel admite como máximo 12 funciones por despliegue):
@@ -68,7 +69,25 @@ async function trimmedPlaylist(res, hlsUrl) {
     return res.status(200).send(out.join("\n"));
 }
 
+// Tarea diaria de Vercel (ver "crons" en vercel.json): vuelve a buscar la
+// lista de deseos. Solo la lanza Vercel: con CRON_SECRET configurado, por
+// su cabecera Authorization; si no, por su User-Agent.
+function isVercelCron(req) {
+    const secret = (process.env.CRON_SECRET || "").trim();
+    if (secret) return req.headers.authorization === `Bearer ${secret}`;
+    return /vercel-cron/i.test(req.headers["user-agent"] || "");
+}
+
 module.exports = async (req, res) => {
+    if (req.method === "GET" && req.query && req.query.cron === "wishlist") {
+        if (!isVercelCron(req)) return res.status(401).json({ error: "Solo para la tarea programada." });
+        try {
+            return res.status(200).json(await runWishlistCheck());
+        } catch (err) {
+            return res.status(500).json({ error: err.message });
+        }
+    }
+
     if (req.method === "GET" && req.query && req.query.hls) {
         try {
             return await trimmedPlaylist(res, req.query.hls);

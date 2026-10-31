@@ -1,17 +1,67 @@
 {
   "rewrites": [
-    { "source": "/admin", "destination": "/api/admin" },
-    { "source": "/admin/add", "destination": "/api/admin?view=add" },
-    { "source": "/login", "destination": "/api/admin-login" },
-    { "source": "/configure", "destination": "/api/configure" },
-    { "source": "/manifest.json", "destination": "/api/manifest.json" },
-    { "source": "/catalog/:type/:id.json", "destination": "/api/catalog/:type/:id" },
-    { "source": "/meta/:type/:id.json", "destination": "/api/meta/:type/:id" },
-    { "source": "/stream/:type/:id.json", "destination": "/api/stream/:type/:id" },
-    { "source": "/:config/configure", "destination": "/api/configure" },
-    { "source": "/:config/manifest.json", "destination": "/api/manifest.json?config=:config" },
-    { "source": "/:config/catalog/:type/:id.json", "destination": "/api/catalog/:type/:id?config=:config" },
-    { "source": "/:config/meta/:type/:id.json", "destination": "/api/meta/:type/:id?config=:config" },
-    { "source": "/:config/stream/:type/:id.json", "destination": "/api/stream/:type/:id?config=:config" }
-  ]
+    {
+      "source": "/admin",
+      "destination": "/api/admin"
+    },
+    {
+      "source": "/admin/add",
+      "destination": "/api/admin?view=add"
+    },
+    {
+      "source": "/login",
+      "destination": "/api/admin-login"
+    },
+    {
+      "source": "/configure",
+      "destination": "/api/configure"
+    },
+    {
+      "source": "/manifest.json",
+      "destination": "/api/manifest.json"
+    },
+    {
+      "source": "/catalog/:type/:id.json",
+      "destination": "/api/catalog/:type/:id"
+    },
+    {
+      "source": "/meta/:type/:id.json",
+      "destination": "/api/meta/:type/:id"
+    },
+    {
+      "source": "/stream/:type/:id.json",
+      "destination": "/api/stream/:type/:id"
+    },
+    {
+      "source": "/:config/configure",
+      "destination": "/api/configure"
+    },
+    {
+      "source": "/:config/manifest.json",
+      "destination": "/api/manifest.json?config=:config"
+    },
+    {
+      "source": "/:config/catalog/:type/:id.json",
+      "destination": "/api/catalog/:type/:id?config=:config"
+    },
+    {
+      "source": "/:config/meta/:type/:id.json",
+      "destination": "/api/meta/:type/:id?config=:config"
+    },
+    {
+      "source": "/:config/stream/:type/:id.json",
+      "destination": "/api/stream/:type/:id?config=:config"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/movie-details?cron=wishlist",
+      "schedule": "0 9 * * *"
+    }
+  ],
+  "functions": {
+    "api/movie-details.js": {
+      "maxDuration": 60
+    }
+  }
 }
