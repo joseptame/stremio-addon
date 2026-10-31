@@ -1,5 +1,5 @@
 const { getDetailsByImdb } = require("../lib/tmdb");
-const { RD_ACCOUNTS, getPlayableStream, accountStates, loadAccountMaps } = require("../lib/realdebrid");
+const { RD_ACCOUNTS, getPlayableStream, accountStates, loadAccountMaps, loadAccountInfos } = require("../lib/realdebrid");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { runWishlistCheck } = require("../lib/wishlist");
 
@@ -110,6 +110,9 @@ module.exports = async (req, res) => {
 
     try {
         if (action === "play") return await playStream(res, infoHash);
+
+        // Premium y descargas activas de cada cuenta (panel de la barra).
+        if (action === "accounts") return res.status(200).json({ accounts: await loadAccountInfos() });
 
         // Estado en RD de varias películas a la vez (para ver el progreso
         // en directo): { status: { <infoHash>: [estado por cuenta] } }.

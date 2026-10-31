@@ -94,16 +94,6 @@ function libraryStyles() {
   .wish-row { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
   .tape.wish { text-decoration: none; color: inherit; }
   .wish-year { color: var(--text-mute); font-weight: 400; }
-  .accounts { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
-  .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-  .acc-card { padding: 16px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--line); }
-  .acc-card.warn { border-color: rgba(255,107,129,0.45); background: var(--err-soft); }
-  .acc-card.off { opacity: 0.6; }
-  .acc-name { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mute); }
-  .acc-days { margin-top: 6px; font: 400 1.6rem/1 var(--font-display); letter-spacing: 0.03em; color: var(--ok); }
-  .acc-card.warn .acc-days { color: var(--err); }
-  .acc-card.off .acc-days { color: var(--text-dim); }
-  .acc-sub { margin-top: 8px; font-size: 0.78rem; color: var(--text-dim); line-height: 1.45; }
   .shelf-row { margin-top: 26px; }
   .shelf-row[hidden] { display: none; }
   .row-head { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -358,28 +348,6 @@ function renderAccountAlert(accountInfos) {
     return `<div class="msg err account-alert">Real-Debrid: renueva el premium de ${list} o dejará de poder descargar y reproducir.</div>`;
 }
 
-function renderAccounts(accountInfos) {
-    if (!accountInfos || !accountInfos.length) return "";
-    const card = (a) => {
-        if (!a.info) {
-            return `<div class="acc-card off"><div class="acc-name">${escapeHtml(a.id)}</div><div class="acc-days">Sin datos</div><div class="acc-sub">Sin clave en este entorno o RD no responde</div></div>`;
-        }
-        const warn = !a.info.premium || a.info.daysLeft <= EXPIRY_WARN_DAYS;
-        const until = a.info.expiration
-            ? new Date(a.info.expiration).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
-            : "";
-        const active = a.info.active != null ? `${a.info.active} descarga${a.info.active === 1 ? "" : "s"} activa${a.info.active === 1 ? "" : "s"}${a.info.limit ? ` de ${a.info.limit}` : ""}` : "";
-        return `<div class="acc-card${warn ? " warn" : ""}">
-          <div class="acc-name">${escapeHtml(a.id)}</div>
-          <div class="acc-days">${escapeHtml(expiryText(a.info))}</div>
-          <div class="acc-sub">${until ? `Premium hasta el ${escapeHtml(until)}` : ""}${until && active ? " · " : ""}${escapeHtml(active)}</div>
-        </div>`;
-    };
-    return `<section class="accounts" aria-label="Cuentas de Real-Debrid">
-      <div class="row-head"><h3 class="row-title">Cuentas de Real-Debrid</h3></div>
-      <div class="acc-grid">${accountInfos.map(card).join("")}</div>
-    </section>`;
-}
 
 function renderTape(it, i) {
     return `
@@ -521,7 +489,6 @@ ${headTags("Biblioteca · JFuster RD")}
       ${grid}
     </section>
     ${renderWishlist(wishlist)}
-    ${renderAccounts(accountInfos)}
   </main>
   </div>
 
