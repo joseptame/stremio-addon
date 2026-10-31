@@ -1427,6 +1427,8 @@ function addStyles() {
   .wish-box { margin-top: 18px; padding: 16px; border-radius: var(--radius-sm); border: 1px dashed var(--line); background: var(--surface); }
   .wish-box[hidden] { display: none; }
   .wish-box p { margin: 0 0 12px; font-size: 0.86rem; line-height: 1.5; color: var(--text-dim); }
+  .wish-box p:last-child { margin-bottom: 0; }
+  .wish-box a { color: var(--text); text-decoration: underline; }
   .other-note { margin-top: 6px; font-size: 0.74rem; color: var(--gold); }
   .empty-box { padding: 34px 16px; text-align: center; color: var(--text-dim); font-size: 0.9rem; border: 1px dashed var(--line-strong); border-radius: 12px; }
   .empty-box .icon { margin: 0 auto 10px; color: var(--text-mute); }
@@ -1645,6 +1647,10 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
     ${BFCACHE_RELOAD_SCRIPT}
     (function () {
       var editing = ${editing ? "true" : "false"};
+      // Lo que ya hay en el catálogo y en la lista de deseos, para avisar al
+      // elegir una película que ya está (en vez de duplicarla).
+      var CATALOG_IDS = ${JSON.stringify(Object.fromEntries(Object.entries(IMDB_STREAMS).map(([id, e]) => [id, e.name || e.title || id]))).replace(/</g, "\\u003c")};
+      var WISH_IDS = ${JSON.stringify(Object.fromEntries(Object.keys(bundledWishlist()).map((id) => [id, true])))};
       var manualHintText = ${JSON.stringify(manualHint)};
       var form = document.getElementById('main-form');
       var modeField = document.getElementById('prowlarrModeField');
@@ -1705,7 +1711,15 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       // copias se ofrece apuntarla para buscarla cada día.
       function updateWishBox() {
         var box = document.getElementById('wish-box');
-        if (box) box.hidden = editing || !imdbIdField.value || !prowlarrMode();
+        if (!box) return;
+        var id = imdbIdField.value;
+        box.hidden = editing || !id || !prowlarrMode() || !!CATALOG_IDS[id];
+        // Ya apuntada (y no se ha entrado desde la propia lista): no se
+        // ofrece añadirla otra vez.
+        var addBtn = document.getElementById('wish-add');
+        if (addBtn && WISH_IDS[id]) {
+          box.innerHTML = '<p>Ya está en tu <a href="/admin#deseos">lista de deseos</a>: la busco cada día.</p>';
+        }
       }
       function submitWish(action) {
         var film = filmEl._film || {};
@@ -1932,6 +1946,11 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             }
             imdbIdField.value = data.imdbId;
             setFilmMeta('<span class="tag ok">✓ ' + esc(data.imdbId) + '</span>');
+            if (CATALOG_IDS[data.imdbId]) {
+              imdbHint.innerHTML = 'Ya está en tu videoclub. Si quieres cambiar su copia, <a href="/admin/add?edit=' +
+                encodeURIComponent(data.imdbId) + '">edítala</a>; si guardas aquí, sustituirás la que tiene.';
+              imdbHint.className = 'hint warn';
+            }
             updateSummary();
             loadFilmDetails(data.imdbId, m);
           })
@@ -1976,6 +1995,9 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         if (/hdr|dolby.vision/.test(t)) tags.push('<span class="tag gold">HDR</span>');
         if (/x265|hevc|h265|h.265/.test(t)) tags.push('<span class="tag">x265</span>');
         if (r.isSpainSpanish) tags.push('<span class="tag ok">🇪🇸 Castellano</span>');
+        // Las MP4 se abren tal cual en el reproductor del panel ("Ver aquí"),
+        // sin esperar a la conversión de Real-Debrid.
+        if (/\\.(mp4|m4v)\\b/.test(t)) tags.push('<span class="tag ok">▶ Al instante</span>');
         if (r.contentType) tags.push('<span class="tag">' + esc(r.contentType) + '</span>');
         return tags.join('');
       }
