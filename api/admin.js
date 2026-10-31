@@ -1205,7 +1205,6 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             <select class="select" id="prowlarr-indexer" aria-label="Indexer">
               <option value="">Todos los indexers</option>
               <option value="The Pirate Bay">The Pirate Bay</option>
-              <option value="NOBS">NOBS</option>
               <option value="Milnueve">Milnueve</option>
             </select>
             <button type="button" id="prowlarr-search-btn" class="btn btn-ghost">${icon("search", 17)} Buscar</button>
