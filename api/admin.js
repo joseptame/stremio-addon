@@ -126,7 +126,11 @@ function libraryStyles() {
     background: rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; transition: opacity 0.3s; }
   .sheet-video:hover .player-src { opacity: 0; }
   .player-ext { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 0.8rem; color: var(--text-mute); }
-  .player-ext[hidden], .player-ext span[hidden] { display: none; }
+  .player-ext[hidden], .player-ext span[hidden], .player-tracks[hidden] { display: none; }
+  .player-tracks { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 14px; font-size: 0.8rem; color: var(--text-mute); }
+  .player-tracks label { display: flex; align-items: center; gap: 8px; }
+  .player-tracks select { min-height: 34px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
+  .player-tracks span { flex: 1 1 100%; }
   #ext-hint { color: var(--gold); }
   #ext-hint a { color: inherit; text-decoration: underline; }
   .player-ext span { flex: 1 1 100%; }
@@ -370,6 +374,11 @@ ${headTags("Biblioteca · JFuster RD")}
         <button type="button" class="icon-btn sheet-close" id="sheet-close" aria-label="Cerrar">${icon("x", 18)}</button>
       </div>
       <div class="sheet-body">
+        <div class="player-tracks" id="player-tracks" hidden>
+          <label>Audio <select id="track-audio"></select></label>
+          <label>Subtítulos <select id="track-subs"></select></label>
+          <span>Al cambiarlos, la película vuelve a empezar desde el principio.</span>
+        </div>
         <div class="player-ext" id="player-ext" hidden>
           <span>¿No arranca o lo quieres en 4K? Original en:</span>
           <a class="btn btn-ghost" id="ext-vlc" href="#">VLC</a>
@@ -733,6 +742,54 @@ ${headTags("Biblioteca · JFuster RD")}
         });
       });
 
+      function startConverted(it, data, rdHls) {
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        showPlayerMessage('<span class="spinner"></span> Real-Debrid está preparando el vídeo… con películas 4K puede tardar hasta un minuto.');
+        warmUp(rdHls).then(function () {
+          startVideo(it, {
+            account: data.account, filename: data.filename, download: data.download,
+            hls: '/api/movie-details?hls=' + encodeURIComponent(rdHls),
+          });
+        });
+      }
+
+      // Audio y subtítulos del streaming convertido: RD lleva la pista en
+      // el camino de la URL (.../<audio>/<subtítulos>/<códec>/<calidad>.m3u8)
+      // y solo sabe empezar a convertir desde el principio, así que cambiar
+      // de pista vuelve a arrancar la película desde el inicio.
+      var tracksEl = document.getElementById('player-tracks');
+      var audioSel = document.getElementById('track-audio');
+      var subsSel = document.getElementById('track-subs');
+      var LANGS = { spa: 'Castellano', es: 'Castellano', eng: 'Inglés', en: 'Inglés', fre: 'Francés', fra: 'Francés',
+        ger: 'Alemán', deu: 'Alemán', ita: 'Italiano', por: 'Portugués', jpn: 'Japonés', kor: 'Coreano',
+        chi: 'Chino', zho: 'Chino', rus: 'Ruso', cat: 'Catalán', lat: 'Latino', und: 'Desconocido' };
+      function trackOptions(tracks, selected) {
+        var count = {};
+        tracks.forEach(function (t) { count[t.lang] = (count[t.lang] || 0) + 1; });
+        var seen = {};
+        return tracks.map(function (t) {
+          seen[t.lang] = (seen[t.lang] || 0) + 1;
+          var name = LANGS[t.lang] || t.label;
+          if (count[t.lang] > 1) name += ' ' + seen[t.lang];
+          return '<option value="' + esc(t.key) + '"' + (t.key === selected ? ' selected' : '') + '>' + esc(name) + '</option>';
+        }).join('');
+      }
+      function showTracks(it, data) {
+        var tr = data.tracks;
+        if (!tr || (tr.audio.length < 2 && !tr.subtitles.length)) { tracksEl.hidden = true; return; }
+        audioSel.innerHTML = trackOptions(tr.audio, tr.current.audio);
+        subsSel.innerHTML = '<option value="none">Sin subtítulos</option>' + trackOptions(tr.subtitles, tr.current.subtitles);
+        tracksEl.hidden = false;
+        tracksEl.onchange = function () {
+          if (current !== it) return;
+          var parts = data.hls.split('/');
+          var n = parts.length;
+          parts[n - 4] = audioSel.value;
+          parts[n - 3] = subsSel.value;
+          startConverted(it, data, parts.join('/'));
+        };
+      }
+
       function playMovie() {
         var it = current;
         if (!it) return;
@@ -753,11 +810,8 @@ ${headTags("Biblioteca · JFuster RD")}
             // se adelanta sin esperas, así que no hace falta la conversión.
             if (data.download && /\\.(mp4|m4v|mov)$/i.test(data.filename || '')) data.hls = null;
             if (!data.hls) return startVideo(it, data);
-            showPlayerMessage('<span class="spinner"></span> Real-Debrid está preparando el vídeo… con películas 4K puede tardar hasta un minuto.');
-            warmUp(data.hls).then(function () {
-              data.hls = '/api/movie-details?hls=' + encodeURIComponent(data.hls);
-              startVideo(it, data);
-            });
+            showTracks(it, data);
+            startConverted(it, data, data.hls);
           })
           .catch(function () {
             if (current === it) showPlayerMessage('No se pudo preparar la reproducción ahora mismo.');
@@ -770,6 +824,7 @@ ${headTags("Biblioteca · JFuster RD")}
         if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
         videoEl.innerHTML = '';
         extEl.hidden = true;
+        if (tracksEl) tracksEl.hidden = true;
         sheetEl.classList.remove('playing');
       }
 
