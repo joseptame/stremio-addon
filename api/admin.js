@@ -758,21 +758,67 @@ ${headTags("Biblioteca · JFuster RD")}
         } },
       };
 
+      // hls.js siempre que el navegador lo admita (también el iPhone con
+      // iOS 17.1+): a diferencia del reproductor nativo de Safari, deja
+      // reintentar y recuperarse cuando RD entrega un fragmento cortado o
+      // tarda en tenerlo. El nativo queda para iPhones más antiguos.
       function attachStream(video, data) {
-        if (data.hls && video.canPlayType('application/vnd.apple.mpegurl')) {
-          video.src = data.hls;
-          return Promise.resolve();
-        }
-        if (data.hls) {
-          return loadHlsJs().then(function (Hls) {
-            if (!Hls || !Hls.isSupported()) throw new Error('hls');
+        if (!data.hls) { video.src = data.download; return Promise.resolve(); }
+        return loadHlsJs().catch(function () { return null; }).then(function (Hls) {
+          if (Hls && Hls.isSupported()) {
             hlsInstance = new Hls(HLS_CONFIG);
+            hlsInstance.on(Hls.Events.ERROR, function (e, d) {
+              if (!d.fatal) return;
+              if (d.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
+              else hlsInstance.startLoad(video.currentTime);
+            });
             hlsInstance.loadSource(data.hls);
             hlsInstance.attachMedia(video);
-          }).catch(function () { video.src = data.download; });
-        }
-        video.src = data.download;
-        return Promise.resolve();
+          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = data.hls;
+          } else {
+            video.src = data.download;
+          }
+        });
+      }
+
+      // Vigilante: si el vídeo lleva 12 s sin avanzar mientras debería
+      // reproducirse, se vuelve a pedir desde ese punto (RD a veces entrega
+      // un fragmento a medias mientras aún lo está convirtiendo; al pedirlo
+      // otra vez llega entero). Tras varios intentos, se sugiere VLC/Infuse.
+      function watchStalls(it, video) {
+        var lastTime = -1, stuckSince = 0, recoveries = 0;
+        var timer = setInterval(function () {
+          if (current !== it || !document.body.contains(video)) { clearInterval(timer); return; }
+          if (video.paused || video.ended) { stuckSince = 0; return; }
+          if (video.currentTime !== lastTime) { lastTime = video.currentTime; stuckSince = 0; return; }
+          if (!stuckSince) { stuckSince = Date.now(); return; }
+          if (Date.now() - stuckSince < 12000) return;
+          stuckSince = 0;
+          recoveries++;
+          if (recoveries > 5) {
+            clearInterval(timer);
+            var note = document.createElement('div');
+            note.className = 'player-src';
+            note.textContent = 'Real-Debrid no está entregando el vídeo con fluidez. Prueba con VLC o Infuse (abajo).';
+            videoEl.appendChild(note);
+            return;
+          }
+          var t = video.currentTime;
+          if (hlsInstance) {
+            hlsInstance.stopLoad();
+            hlsInstance.startLoad(t);
+          } else {
+            var src = video.currentSrc || video.src;
+            video.src = src;
+            video.addEventListener('loadedmetadata', function once() {
+              video.removeEventListener('loadedmetadata', once);
+              video.currentTime = t;
+            });
+          }
+          var p = video.play();
+          if (p && p.catch) p.catch(function () {});
+        }, 2000);
       }
 
       function startVideo(it, data) {
@@ -781,6 +827,7 @@ ${headTags("Biblioteca · JFuster RD")}
           '<div class="player-src">' + esc(data.account) + ' · ' + esc(data.filename) + '</div>';
         var video = videoEl.querySelector('video');
         attachStream(video, data).then(function () {
+          watchStalls(it, video);
           var p = video.play();
           if (p && p.catch) p.catch(function () {});
         });
@@ -900,6 +947,11 @@ ${headTags("Biblioteca · JFuster RD")}
             // Un MP4 lo reproduce el navegador tal cual: arranca al momento y
             // se adelanta sin esperas, así que no hace falta la conversión.
             if (data.download && /\\.(mp4|m4v|mov)$/i.test(data.filename || '')) data.hls = null;
+            var direct = /\\.(mp4|m4v|mov|webm)$/i.test(data.filename || '');
+            if (!data.hls && !direct) {
+              showPlayerMessage('Real-Debrid no ha podido preparar el streaming ahora mismo. Prueba de nuevo en un rato o ábrela con VLC o Infuse.');
+              return;
+            }
             if (!data.hls) return startVideo(it, data);
             showTracks(it, data);
             startConverted(it, data, data.hls);
