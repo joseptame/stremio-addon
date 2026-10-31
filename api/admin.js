@@ -1426,6 +1426,8 @@ function addStyles() {
   .release.other-year:not(.selected) { opacity: 0.5; }
   .wish-box { margin-top: 18px; padding: 16px; border-radius: var(--radius-sm); border: 1px dashed var(--line); background: var(--surface); }
   .wish-box[hidden] { display: none; }
+  .search-warn { margin-bottom: 12px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.82rem; line-height: 1.45;
+    color: var(--gold); background: rgba(255,194,71,0.08); border: 1px solid rgba(255,194,71,0.3); }
   .wish-box p { margin: 0 0 12px; font-size: 0.86rem; line-height: 1.5; color: var(--text-dim); }
   .wish-box p:last-child { margin-bottom: 0; }
   .wish-box a { color: var(--text); text-decoration: underline; }
@@ -1690,6 +1692,15 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       var releasesEl = document.getElementById('releases');
       var selectedRelease = null;
       var lastResults = [];
+      // Indexers que no han respondido en la última búsqueda (se avisa
+      // encima de la lista en vez de dar menos resultados sin más).
+      var searchWarnings = [];
+      function warningHtml() {
+        if (!searchWarnings.length) return '';
+        var names = searchWarnings.map(esc).join(', ');
+        return '<div class="search-warn">⚠ ' + names + (searchWarnings.length === 1 ? ' no responde' : ' no responden') +
+          ' ahora mismo: puede que falten copias. Prueba de nuevo en un rato.</div>';
+      }
       var sortKey = '';
       var tmdbTimer = null;
       var tmdbRequest = 0;
@@ -2049,10 +2060,10 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       function renderReleases() {
         var list = visibleResults();
         if (!list.length) {
-          releasesEl.innerHTML = '<div class="empty-box">Sin resultados.</div>';
+          releasesEl.innerHTML = warningHtml() + '<div class="empty-box">Sin resultados.</div>';
           return;
         }
-        releasesEl.innerHTML = list.map(function (r, i) {
+        releasesEl.innerHTML = warningHtml() + list.map(function (r, i) {
           var idx = lastResults.indexOf(r);
           var isSel = selectedRelease === r;
           var other = otherYear(r);
@@ -2144,6 +2155,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             if (id !== searchRequest) return;
             if (data.error) { releasesEl.innerHTML = '<div class="empty-box" style="color:var(--err)">' + esc(data.error) + '</div>'; return; }
             lastResults = data.results || [];
+            searchWarnings = data.warnings || [];
             renderReleases();
           })
           .catch(function () {

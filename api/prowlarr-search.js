@@ -29,7 +29,7 @@ module.exports = async (req, res) => {
 
     try {
         const results = await searchProwlarr(String(q).trim(), scope, indexer, originalName);
-        return res.status(200).json({ results });
+        return res.status(200).json({ results, warnings: results.warnings || [] });
     } catch (err) {
         return res.status(502).json({ error: err.message });
     }
