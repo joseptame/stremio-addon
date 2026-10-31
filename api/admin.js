@@ -1269,6 +1269,21 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       var queryInput = document.getElementById('prowlarr-query');
       var originalQueryInput = document.getElementById('prowlarr-original-query');
       var indexerSelect = document.getElementById('prowlarr-indexer');
+      // Con Jackett, el desplegable se rellena con sus indexers reales.
+      fetch('/api/prowlarr-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listIndexers: true }),
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!Array.isArray(data.indexers)) return;
+          var chosen = indexerSelect.value;
+          indexerSelect.innerHTML = '<option value="">Todos los indexers</option>' + data.indexers.map(function (n) {
+            return '<option value="' + esc(n) + '"' + (n === chosen ? ' selected' : '') + '>' + esc(n) + '</option>';
+          }).join('');
+        })
+        .catch(function () {});
       var esCheckbox = document.getElementById('prowlarr-es');
       var releasesEl = document.getElementById('releases');
       var selectedRelease = null;

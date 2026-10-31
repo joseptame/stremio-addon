@@ -1,4 +1,4 @@
-const { searchProwlarr } = require("../lib/prowlarr");
+const { searchProwlarr, listIndexerNames } = require("../lib/prowlarr");
 const { isAuthenticated } = require("../lib/adminAuth");
 
 module.exports = async (req, res) => {
@@ -12,7 +12,16 @@ module.exports = async (req, res) => {
         return res.status(401).json({ error: "Sesión caducada. Vuelve a iniciar sesión en /admin." });
     }
 
-    const { q, scope, indexer, originalName } = req.body || {};
+    const { q, scope, indexer, originalName, listIndexers } = req.body || {};
+
+    // Lista de indexers para el desplegable (null = la fija del panel).
+    if (listIndexers) {
+        try {
+            return res.status(200).json({ indexers: await listIndexerNames() });
+        } catch (err) {
+            return res.status(502).json({ error: err.message });
+        }
+    }
 
     if (!q || !String(q).trim()) {
         return res.status(400).json({ error: "Falta el término de búsqueda." });
