@@ -5,16 +5,16 @@ const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { escapeHtml, icon, headTags, themeCss, isLocal, renderTopBar, renderBottomNav } = require("../lib/ui");
-const { WISHLIST_PATH, checkWish, readWishlist, writeWishlist } = require("../lib/wishlist");
-const fs = require("fs");
-const path = require("path");
+const { checkWish, readWishlist, writeWishlist } = require("../lib/wishlist");
 
 // Lista de deseos tal como está en este despliegue (cada cambio es un
 // commit y Vercel redespliega en ~1 min; tras añadir o quitar se pinta con
-// la que se acaba de escribir).
+// la que se acaba de escribir). Con require y ruta literal para que Vercel
+// incluya el fichero en la función: leyéndolo con fs y una ruta construida,
+// en producción no se empaquetaba y la lista salía vacía.
 function bundledWishlist() {
     try {
-        return JSON.parse(fs.readFileSync(path.join(__dirname, "..", WISHLIST_PATH), "utf-8"));
+        return require("../lib/wishlist.json");
     } catch {
         return {};
     }
