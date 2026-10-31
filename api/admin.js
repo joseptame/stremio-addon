@@ -749,12 +749,61 @@ ${headTags("Biblioteca · JFuster RD")}
           .then(function () { clearTimeout(timer); });
       }
 
-      // Esperas largas y reintentos: los saltos lejos también tardan en RD.
+      // RD convierte más o menos a la velocidad de reproducción y, si se le
+      // pide un fragmento que aún está escribiendo, entrega lo que lleva
+      // (p. ej. 262144 bytes) como si estuviera completo: el reproductor se
+      // atasca en él. Un fragmento TS completo son paquetes de 188 bytes,
+      // así que si el tamaño no es múltiplo de 188 se espera y se pide otra
+      // vez. Las peticiones que RD deja colgadas se cortan a los 15 s y se
+      // repiten (al repetirlas suelen llegar al momento).
+      function completeTsLoader(Hls) {
+        var Base = Hls.DefaultConfig.loader;
+        function Loader(config) {
+          this.config = config;
+          this.inner = new Base(config);
+          this.stats = this.inner.stats;
+          this.context = null;
+          this.timer = null;
+        }
+        Loader.prototype.load = function (context, loadConfig, callbacks) {
+          var self = this;
+          var attempts = 0;
+          self.context = context;
+          function go() {
+            self.inner.destroy();
+            self.inner = new Base(self.config);
+            self.stats = self.inner.stats;
+            self.inner.load(context, loadConfig, {
+              onSuccess: function (response, stats, ctx, net) {
+                var len = response.data && response.data.byteLength;
+                var isTs = /\\.ts(\\?|$)/.test(ctx.url);
+                if (isTs && (!len || len % 188 !== 0) && attempts++ < 40) {
+                  self.timer = setTimeout(go, 2000);
+                  return;
+                }
+                callbacks.onSuccess(response, stats, ctx, net);
+              },
+              onError: callbacks.onError,
+              onTimeout: callbacks.onTimeout,
+              onAbort: callbacks.onAbort,
+              onProgress: callbacks.onProgress,
+            });
+          }
+          go();
+        };
+        Loader.prototype.abort = function () { clearTimeout(this.timer); this.inner.abort(); };
+        Loader.prototype.destroy = function () { clearTimeout(this.timer); this.inner.destroy(); };
+        Loader.prototype.getCacheAge = function () { return this.inner.getCacheAge ? this.inner.getCacheAge() : null; };
+        Loader.prototype.getResponseHeader = function (h) { return this.inner.getResponseHeader ? this.inner.getResponseHeader(h) : null; };
+        return Loader;
+      }
+
       var HLS_CONFIG = {
+        maxBufferLength: 60,
         fragLoadPolicy: { default: {
-          maxTimeToFirstByteMs: 90000, maxLoadTimeMs: 180000,
-          timeoutRetry: { maxNumRetry: 3, retryDelayMs: 0, maxRetryDelayMs: 0 },
-          errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          maxTimeToFirstByteMs: 15000, maxLoadTimeMs: 90000,
+          timeoutRetry: { maxNumRetry: 12, retryDelayMs: 0, maxRetryDelayMs: 0 },
+          errorRetry: { maxNumRetry: 8, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
         } },
       };
 
@@ -766,6 +815,7 @@ ${headTags("Biblioteca · JFuster RD")}
         if (!data.hls) { video.src = data.download; return Promise.resolve(); }
         return loadHlsJs().catch(function () { return null; }).then(function (Hls) {
           if (Hls && Hls.isSupported()) {
+            HLS_CONFIG.fLoader = completeTsLoader(Hls);
             hlsInstance = new Hls(HLS_CONFIG);
             hlsInstance.on(Hls.Events.ERROR, function (e, d) {
               if (!d.fatal) return;
