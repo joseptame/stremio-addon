@@ -75,6 +75,23 @@ function libraryStyles() {
   .tape-badge.ready { color: var(--ok); }
   .tape-badge.downloading { color: var(--gold); }
   .tape-badge.none { color: var(--text-dim); }
+  .tape-badge.review { color: var(--err); }
+  .shelf-row { margin-top: 26px; }
+  .shelf-row[hidden] { display: none; }
+  .row-head { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; margin-bottom: 14px; }
+  .row-title { margin: 0; font: 400 1.5rem/1 var(--font-display); letter-spacing: 0.04em; }
+  .row-title .count { color: var(--text-mute); font-size: 1.05rem; margin-left: 4px; }
+  .row-hint { margin: 0; font-size: 0.8rem; color: var(--text-mute); }
+  .shelf-row[data-row="review"] .row-title { color: var(--err); }
+  .review-box { margin: 0 0 22px; padding: 16px; border-radius: var(--radius); background: var(--err-soft); border: 1px solid rgba(255,107,129,0.3); }
+  .review-box[hidden] { display: none; }
+  .review-box p { margin: 0 0 12px; font-size: 0.88rem; line-height: 1.5; color: #ffc0ca; }
+  details.tech { margin-bottom: 22px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+  details.tech summary { cursor: pointer; padding: 12px 16px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-mute); }
+  .tech-list { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: center; margin: 0; padding: 4px 16px 16px; font-size: 0.84rem; }
+  .tech-list dt { color: var(--text-mute); }
+  .tech-list dd { margin: 0; min-width: 0; color: var(--text-dim); }
+  .tech-list .hash-row { padding: 4px 4px 4px 12px; }
   .tape-type { position: absolute; top: 9px; right: 9px; z-index: 2; }
   .tape-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; z-index: 2; background: rgba(0,0,0,0.5); }
   .tape-progress span { display: block; height: 100%; background: var(--gold); box-shadow: 0 0 8px var(--gold); }
@@ -201,24 +218,52 @@ function backdropFor(imdbId) {
     return `https://images.metahub.space/background/medium/${encodeURIComponent(imdbId)}/img`;
 }
 
-// Resumen de estado en RD de una película: por cuenta y global
-// ("ready" si todas las cuentas que la tienen la han descargado,
-// "downloading" si alguna va por la mitad, "none" si no está en ninguna).
-// "all" lleva siempre las tres cuentas para la ficha: "ok" si la tiene,
-// "missing" si no la tiene y "nokey" si en este entorno no hay API key
-// de esa cuenta (p. ej. en local) y por tanto no se puede saber.
+// Resumen de estado en RD de una película. "all" lleva siempre las tres
+// cuentas para la ficha ("ok" si la tiene, "missing" si no y "nokey" si en
+// este entorno no hay API key de esa cuenta). "group" decide en qué fila
+// de la biblioteca va:
+// - "ready": alguna cuenta la tiene al 100%, ya se puede ver.
+// - "downloading": alguna cuenta la está descargando de verdad.
+// - "review": no está en ninguna cuenta o RD no va a poder descargarla
+//   (sin fuentes, error, atascada): hay que buscar otra copia.
+// "pct" es el progreso de la cuenta que más avanzada va.
 function rdSummary(entry, rdMaps) {
     const all = accountStates(entry.infoHash, rdMaps);
     const accounts = all.filter((a) => a.state === "ok");
-    if (accounts.length === 0) return { all, accounts, status: "none", pct: 0 };
-    const minPct = Math.min(...accounts.map((a) => a.pct));
-    return { all, accounts, status: minPct === 100 ? "ready" : "downloading", pct: minPct };
+    const active = accounts.filter((a) => !a.problem && a.pct < 100);
+    const group = accounts.some((a) => a.pct === 100) ? "ready" : active.length ? "downloading" : "review";
+    const pct = group === "ready" ? 100 : active.length ? Math.max(...active.map((a) => a.pct)) : 0;
+    return { all, accounts, group, pct };
 }
 
 function statusBadge(summary) {
-    if (summary.status === "ready") return `<span class="tape-badge ready">${icon("check", 12)} En RD</span>`;
-    if (summary.status === "downloading") return `<span class="tape-badge downloading">${icon("download", 12)} ${summary.pct}%</span>`;
-    return `<span class="tape-badge none">Sin RD</span>`;
+    if (summary.group === "ready") return `<span class="tape-badge ready">${icon("check", 12)} Lista</span>`;
+    if (summary.group === "downloading") return `<span class="tape-badge downloading">${icon("download", 12)} ${summary.pct}%</span>`;
+    return `<span class="tape-badge review">Revisar</span>`;
+}
+
+// Filas de la biblioteca, en este orden (ver "group" en rdSummary).
+const LIBRARY_ROWS = [
+    { group: "ready", title: "Listas para ver", hint: "Ya están en Real-Debrid." },
+    { group: "downloading", title: "Descargando", hint: "El progreso se actualiza solo." },
+    { group: "review", title: "Revisar", hint: "Sin fuentes, con error o fuera de Real-Debrid: ábrela y busca otra copia." },
+];
+
+function renderTape(it, i) {
+    return `
+          <button type="button" class="tape" data-open="${escapeHtml(it.id)}" data-type="${it.type}" data-group="${it.group}"
+            data-search="${escapeHtml(`${it.name} ${it.title} ${it.id}`.toLowerCase())}" style="--i:${Math.min(i, 20)}" aria-label="${escapeHtml(it.name)}">
+            <div class="tape-poster">
+              ${it.poster
+                ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tape-placeholder" style="display:none">${icon("film", 30)}${escapeHtml(it.name)}</div>`
+                : `<div class="tape-placeholder">${icon("film", 30)}${escapeHtml(it.name)}</div>`}
+              ${statusBadge(it)}
+              ${it.type === "series" ? `<span class="tag accent tape-type">Serie</span>` : ""}
+              ${it.group === "downloading" ? `<div class="tape-progress"><span style="width:${it.pct}%"></span></div>` : ""}
+            </div>
+            <div class="tape-title">${escapeHtml(it.name)}</div>
+            <div class="tape-sub">${it.type === "series" ? "Serie" : "Película"}</div>
+          </button>`;
 }
 
 function renderListPage({ message, imdbStreams, rdMaps }) {
@@ -235,7 +280,7 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
             infoHash: s.infoHash || "",
             hasTrackers: Array.isArray(s.sources) && s.sources.length > 0,
             rd: summary.all,
-            status: summary.status,
+            group: summary.group,
             pct: summary.pct,
         };
     });
@@ -244,9 +289,6 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
         all: items.length,
         movie: items.filter((i) => i.type === "movie").length,
         series: items.filter((i) => i.type === "series").length,
-        ready: items.filter((i) => i.status === "ready").length,
-        downloading: items.filter((i) => i.status === "downloading").length,
-        none: items.filter((i) => i.status === "none").length,
     };
 
     // La última del JSON es la última añadida (se insertan al final).
@@ -263,10 +305,8 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
           <h1 class="hero-title">${escapeHtml(latest.name)}</h1>
           <div class="hero-meta">
             <span class="tag">${latest.type === "series" ? "Serie" : "Película"}</span>
-            <span class="tag">${escapeHtml(latest.id)}</span>
-            <span class="tag ${latest.hasTrackers ? "accent" : ""}">${latest.hasTrackers ? "Torrent" : "Magnet"}</span>
           </div>
-          ${latest.status !== "none" ? `<div class="rd-mini">${latest.rd.filter((a) => a.state === "ok").map((a) => `<span class="acc">${a.pct === 100 ? `<span style="color:var(--ok)">${icon("check", 14)}</span>` : `<span style="color:var(--gold)">${icon("download", 14)}</span>`}<b>${escapeHtml(a.id)}</b> ${escapeHtml(a.label)}</span>`).join("")}</div>` : `<div class="rd-mini"><span class="acc">Aún no está en ninguna cuenta de Real-Debrid</span></div>`}
+          ${latest.rd.some((a) => a.state === "ok") ? `<div class="rd-mini">${latest.rd.filter((a) => a.state === "ok").map((a) => `<span class="acc">${a.pct === 100 ? `<span style="color:var(--ok)">${icon("check", 14)}</span>` : `<span style="color:var(--gold)">${icon("download", 14)}</span>`}<b>${escapeHtml(a.id)}</b> ${escapeHtml(a.label)}</span>`).join("")}</div>` : `<div class="rd-mini"><span class="acc">Aún no está en ninguna cuenta de Real-Debrid</span></div>`}
           <div class="hero-actions">
             <button type="button" class="btn btn-primary" data-open="${escapeHtml(latest.id)}">${icon("eye", 18)} Ver ficha</button>
             <a class="btn btn-ghost" href="/admin/add?edit=${encodeURIComponent(latest.id)}">${icon("edit", 17)} Editar</a>
@@ -282,21 +322,16 @@ function renderListPage({ message, imdbStreams, rdMaps }) {
             <p>Añade tu primera película para que aparezca en Stremio.</p>
             <a class="btn btn-primary" href="/admin/add" style="margin-top:10px">${icon("plus", 18)} Añadir película</a>
           </div>`
-        : `<div class="grid" id="grid">${items.slice().reverse().map((it, i) => `
-          <button type="button" class="tape" data-open="${escapeHtml(it.id)}" data-type="${it.type}" data-status="${it.status}"
-            data-search="${escapeHtml(`${it.name} ${it.title} ${it.id}`.toLowerCase())}" style="--i:${Math.min(i, 20)}" aria-label="${escapeHtml(it.name)}">
-            <div class="tape-poster">
-              ${it.poster
-                ? `<img src="${escapeHtml(it.poster)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tape-placeholder" style="display:none">${icon("film", 30)}${escapeHtml(it.name)}</div>`
-                : `<div class="tape-placeholder">${icon("film", 30)}${escapeHtml(it.name)}</div>`}
-              ${statusBadge({ status: it.status, pct: it.pct })}
-              ${it.type === "series" ? `<span class="tag accent tape-type">Serie</span>` : ""}
-              ${it.status === "downloading" ? `<div class="tape-progress"><span style="width:${it.pct}%"></span></div>` : ""}
-            </div>
-            <div class="tape-title">${escapeHtml(it.name)}</div>
-            <div class="tape-sub">${it.type === "series" ? "Serie" : "Película"} · ${escapeHtml(it.id)}</div>
-          </button>`).join("")}
-        </div>
+        : `${LIBRARY_ROWS.map((row) => {
+            const rowItems = items.slice().reverse().filter((it) => it.group === row.group);
+            return `<section class="shelf-row" data-row="${row.group}"${rowItems.length ? "" : " hidden"}>
+          <div class="row-head">
+            <h3 class="row-title">${row.title} <span class="count" data-row-count>${rowItems.length}</span></h3>
+            <p class="row-hint">${row.hint}</p>
+          </div>
+          <div class="grid" data-grid="${row.group}">${rowItems.map((it, i) => renderTape(it, i)).join("")}</div>
+        </section>`;
+        }).join("")}
         <div class="empty-state" id="no-results" style="display:none">
           ${icon("search", 40)}
           <div class="big">Nada por aquí</div>
@@ -345,12 +380,9 @@ ${headTags("Biblioteca · JFuster RD")}
           <input class="input" id="search" type="search" placeholder="Buscar por título o id de IMDb..." autocomplete="off">
         </div>
         <div class="filters" role="toolbar" aria-label="Filtros">
-          ${filterChip("all", "Todas")}
+          ${counts.series ? filterChip("all", "Todas") : ""}
           ${counts.series ? filterChip("movie", "Películas") : ""}
           ${filterChip("series", "Series")}
-          ${filterChip("ready", "Listas en RD")}
-          ${filterChip("downloading", "Descargando")}
-          ${filterChip("none", "Sin RD")}
         </div>
       </div>` : ""}
       ${grid}
@@ -393,15 +425,23 @@ ${headTags("Biblioteca · JFuster RD")}
           <p class="sheet-tagline" id="sheet-tagline"></p>
           <div class="sheet-overview" id="sheet-overview"></div>
         </div>
+        <div class="review-box" id="sheet-review" hidden>
+          <p id="sheet-review-text"></p>
+          <a class="btn btn-primary" id="sheet-review-btn" href="#">${icon("search", 17)} Buscar otra copia</a>
+        </div>
         <div class="sheet-section">
           <h4>Real-Debrid</h4>
           <div class="rd-list" id="sheet-rd"></div>
           <button type="button" class="btn btn-ghost rd-notify" id="sheet-notify" hidden>🔔 Avisarme cuando esté lista</button>
         </div>
-        <div class="sheet-section">
-          <h4>InfoHash</h4>
-          <div class="hash-row"><code id="sheet-hash"></code><button type="button" class="btn btn-ghost" id="sheet-copy">${icon("copy", 16)} Copiar</button></div>
-        </div>
+        <details class="tech">
+          <summary>Detalles técnicos</summary>
+          <dl class="tech-list">
+            <dt>IMDb</dt><dd id="sheet-tech-imdb"></dd>
+            <dt>Enlace</dt><dd id="sheet-tech-link"></dd>
+            <dt>InfoHash</dt><dd><div class="hash-row"><code id="sheet-hash"></code><button type="button" class="btn btn-ghost" id="sheet-copy">${icon("copy", 16)} Copiar</button></div></dd>
+          </dl>
+        </details>
         <div class="sheet-actions">
           <button type="button" class="btn btn-primary" id="sheet-watch" style="display:none">${icon("play", 17)} Ver ahora</button>
           <button type="button" class="btn btn-ghost" id="sheet-trailer" style="display:none">${icon("film", 17)} Tráiler</button>
@@ -431,32 +471,40 @@ ${headTags("Biblioteca · JFuster RD")}
 
     // ── Búsqueda y filtros de la cuadrícula ──
     (function () {
-      var tapes = Array.prototype.slice.call(document.querySelectorAll('#grid .tape'));
       var searchInput = document.getElementById('search');
       var noResults = document.getElementById('no-results');
       var countEl = document.getElementById('movie-count');
       var chips = document.querySelectorAll('[data-filter]');
       var filter = 'all';
 
-      if (!tapes.length) return;
+      if (!searchInput) return;
 
       function matches(t) {
-        if (filter === 'movie' || filter === 'series') { if (t.dataset.type !== filter) return false; }
-        else if (filter !== 'all' && t.dataset.status !== filter) return false;
+        if ((filter === 'movie' || filter === 'series') && t.dataset.type !== filter) return false;
         var q = (searchInput.value || '').trim().toLowerCase();
         return !q || t.dataset.search.indexOf(q) !== -1;
       }
 
+      // Cada fila muestra cuántas le quedan y se oculta si no queda ninguna.
+      // Se exporta para que el progreso en directo la llame al mover una
+      // película de fila.
       function render() {
         var shown = 0;
-        tapes.forEach(function (t) {
-          var ok = matches(t);
-          t.style.display = ok ? '' : 'none';
-          if (ok) shown++;
+        document.querySelectorAll('.shelf-row').forEach(function (row) {
+          var inRow = 0;
+          row.querySelectorAll('.tape').forEach(function (t) {
+            var ok = matches(t);
+            t.style.display = ok ? '' : 'none';
+            if (ok) inRow++;
+          });
+          row.querySelector('[data-row-count]').textContent = inRow;
+          row.hidden = !inRow;
+          shown += inRow;
         });
         countEl.textContent = shown;
         noResults.style.display = shown ? 'none' : 'block';
       }
+      window.renderLibrary = render;
 
       chips.forEach(function (chip) {
         chip.addEventListener('click', function () {
@@ -501,9 +549,11 @@ ${headTags("Biblioteca · JFuster RD")}
         poster.style.visibility = it.poster ? 'visible' : 'hidden';
         document.getElementById('sheet-title').textContent = it.name;
         document.getElementById('sheet-tags').innerHTML =
-          '<span class="tag">' + (it.type === 'series' ? 'Serie' : 'Película') + '</span>' +
-          '<span class="tag">' + esc(it.id) + '</span>' +
-          '<span class="tag' + (it.hasTrackers ? ' accent' : '') + '">' + (it.hasTrackers ? 'Torrent con trackers' : 'Magnet sin trackers') + '</span>';
+          '<span class="tag">' + (it.type === 'series' ? 'Serie' : 'Película') + '</span>';
+        document.getElementById('sheet-tech-imdb').textContent = it.id;
+        document.getElementById('sheet-tech-link').textContent = it.hasTrackers ? 'Torrent con trackers' : 'Magnet sin trackers';
+        document.getElementById('sheet-review-btn').href = '/admin/add?edit=' + encodeURIComponent(it.id);
+        overlay.querySelector('details.tech').open = false;
         renderRd(it);
         loadDetails(it);
         document.getElementById('sheet-hash').textContent = it.infoHash;
@@ -521,7 +571,7 @@ ${headTags("Biblioteca · JFuster RD")}
         return it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
       }
       function isDownloading(it) {
-        return it.rd.some(function (a) { return a.state === 'ok' && a.pct < 100; });
+        return it.rd.some(function (a) { return a.state === 'ok' && a.pct < 100 && !a.problem; });
       }
 
       function renderRd(it) {
@@ -533,6 +583,14 @@ ${headTags("Biblioteca · JFuster RD")}
             '<span class="state' + (ready ? ' ready' : '') + '">' + (ready ? '✓ Listo' : esc(a.label)) + '</span></div>';
         }).join('');
         document.getElementById('sheet-watch').style.display = anyReady(it) ? '' : 'none';
+        var review = summarize(it).group === 'review';
+        document.getElementById('sheet-review').hidden = !review;
+        if (review) {
+          var inRd = it.rd.some(function (a) { return a.state === 'ok'; });
+          document.getElementById('sheet-review-text').textContent = inRd
+            ? 'Real-Debrid no consigue descargar esta copia (sin fuentes o con error). Elige otra y la mala se borrará de RD.'
+            : 'Esta película no está en ninguna cuenta de Real-Debrid. Elige una copia para descargarla.';
+        }
         notifyBtn.hidden = !(isDownloading(it) && window.Notification && Notification.permission === 'default');
       }
 
@@ -547,26 +605,39 @@ ${headTags("Biblioteca · JFuster RD")}
         Notification.requestPermission().then(function () { if (current) renderRd(current); });
       });
 
+      // Misma regla que rdSummary en el servidor.
       function summarize(it) {
         var ok = it.rd.filter(function (a) { return a.state === 'ok'; });
-        if (!ok.length) return { status: 'none', pct: 0 };
-        var min = Math.min.apply(null, ok.map(function (a) { return a.pct; }));
-        return { status: min === 100 ? 'ready' : 'downloading', pct: min };
+        var active = ok.filter(function (a) { return !a.problem && a.pct < 100; });
+        var group = ok.some(function (a) { return a.pct === 100; }) ? 'ready' : active.length ? 'downloading' : 'review';
+        var pct = group === 'ready' ? 100 : active.length ? Math.max.apply(null, active.map(function (a) { return a.pct; })) : 0;
+        return { group: group, pct: pct };
       }
 
+      // Al cambiar de estado, la tarjeta se actualiza y pasa a su fila.
       function updateTape(it) {
         var tape = document.querySelector('.tape[data-open="' + it.id + '"]');
         if (!tape) return;
-        tape.dataset.status = it.status;
+        var moved = tape.dataset.group !== it.group;
+        tape.dataset.group = it.group;
         var badge = tape.querySelector('.tape-badge');
         if (badge) {
-          badge.className = 'tape-badge ' + it.status;
-          badge.innerHTML = it.status === 'ready' ? ICON_CHECK + ' En RD'
-            : it.status === 'downloading' ? ICON_DOWNLOAD + ' ' + it.pct + '%' : 'Sin RD';
+          badge.className = 'tape-badge ' + it.group;
+          badge.innerHTML = it.group === 'ready' ? ICON_CHECK + ' Lista'
+            : it.group === 'downloading' ? ICON_DOWNLOAD + ' ' + it.pct + '%' : 'Revisar';
         }
         var bar = tape.querySelector('.tape-progress span');
+        if (bar && it.group !== 'downloading') { bar.parentNode.remove(); bar = null; }
+        if (!bar && it.group === 'downloading') {
+          tape.querySelector('.tape-poster').insertAdjacentHTML('beforeend', '<div class="tape-progress"><span></span></div>');
+          bar = tape.querySelector('.tape-progress span');
+        }
         if (bar) bar.style.width = it.pct + '%';
-        if (bar && it.status !== 'downloading') bar.parentNode.remove();
+        if (moved) {
+          var grid = document.querySelector('[data-grid="' + it.group + '"]');
+          if (grid) grid.insertBefore(tape, grid.firstChild);
+          if (window.renderLibrary) window.renderLibrary();
+        }
       }
 
       function showToast(text) {
@@ -612,7 +683,7 @@ ${headTags("Biblioteca · JFuster RD")}
               var wasReady = anyReady(it);
               it.rd = rd;
               var s = summarize(it);
-              it.status = s.status;
+              it.group = s.group;
               it.pct = s.pct;
               updateTape(it);
               if (current === it) renderRd(it);
