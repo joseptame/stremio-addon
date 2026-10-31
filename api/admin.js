@@ -1,6 +1,6 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
-const { RD_ACCOUNTS, triggerRealDebridCache, accountStates, loadAccountMaps, deleteTorrentsByHash } = require("../lib/realdebrid");
+const { RD_ACCOUNTS, triggerRealDebridCache, accountStates, loadAccountMaps, deleteTorrentsByHash, loadAccountInfos } = require("../lib/realdebrid");
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
@@ -76,6 +76,17 @@ function libraryStyles() {
   .tape-badge.downloading { color: var(--gold); }
   .tape-badge.none { color: var(--text-dim); }
   .tape-badge.review { color: var(--err); }
+  .account-alert { margin-top: 18px; }
+  .accounts { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
+  .acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .acc-card { padding: 16px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--line); }
+  .acc-card.warn { border-color: rgba(255,107,129,0.45); background: var(--err-soft); }
+  .acc-card.off { opacity: 0.6; }
+  .acc-name { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mute); }
+  .acc-days { margin-top: 6px; font: 400 1.6rem/1 var(--font-display); letter-spacing: 0.03em; color: var(--ok); }
+  .acc-card.warn .acc-days { color: var(--err); }
+  .acc-card.off .acc-days { color: var(--text-dim); }
+  .acc-sub { margin-top: 8px; font-size: 0.78rem; color: var(--text-dim); line-height: 1.45; }
   .shelf-row { margin-top: 26px; }
   .shelf-row[hidden] { display: none; }
   .row-head { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -252,6 +263,47 @@ const LIBRARY_ROWS = [
     { group: "review", title: "Revisar", hint: "Sin fuentes, con error o fuera de Real-Debrid: ábrela y busca otra copia." },
 ];
 
+// ── Cuentas de Real-Debrid ──
+// Días de premium que quedan y descargas activas de cada cuenta. Con 7
+// días o menos se avisa también arriba de la biblioteca.
+const EXPIRY_WARN_DAYS = 7;
+
+function expiryText(info) {
+    if (!info.premium) return "Sin premium";
+    if (info.daysLeft === 0) return "Caduca hoy";
+    return info.daysLeft === 1 ? "Queda 1 día" : `Quedan ${info.daysLeft} días`;
+}
+
+function renderAccountAlert(accountInfos) {
+    const expiring = (accountInfos || []).filter((a) => a.info && (!a.info.premium || a.info.daysLeft <= EXPIRY_WARN_DAYS));
+    if (!expiring.length) return "";
+    const list = expiring.map((a) => `<b>${escapeHtml(a.id)}</b> (${escapeHtml(expiryText(a.info).toLowerCase())})`).join(", ");
+    return `<div class="msg err account-alert">Real-Debrid: renueva el premium de ${list} o dejará de poder descargar y reproducir.</div>`;
+}
+
+function renderAccounts(accountInfos) {
+    if (!accountInfos || !accountInfos.length) return "";
+    const card = (a) => {
+        if (!a.info) {
+            return `<div class="acc-card off"><div class="acc-name">${escapeHtml(a.id)}</div><div class="acc-days">Sin datos</div><div class="acc-sub">Sin clave en este entorno o RD no responde</div></div>`;
+        }
+        const warn = !a.info.premium || a.info.daysLeft <= EXPIRY_WARN_DAYS;
+        const until = a.info.expiration
+            ? new Date(a.info.expiration).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
+            : "";
+        const active = a.info.active != null ? `${a.info.active} descarga${a.info.active === 1 ? "" : "s"} activa${a.info.active === 1 ? "" : "s"}${a.info.limit ? ` de ${a.info.limit}` : ""}` : "";
+        return `<div class="acc-card${warn ? " warn" : ""}">
+          <div class="acc-name">${escapeHtml(a.id)}</div>
+          <div class="acc-days">${escapeHtml(expiryText(a.info))}</div>
+          <div class="acc-sub">${until ? `Premium hasta el ${escapeHtml(until)}` : ""}${until && active ? " · " : ""}${escapeHtml(active)}</div>
+        </div>`;
+    };
+    return `<section class="accounts" aria-label="Cuentas de Real-Debrid">
+      <div class="row-head"><h3 class="row-title">Cuentas de Real-Debrid</h3></div>
+      <div class="acc-grid">${accountInfos.map(card).join("")}</div>
+    </section>`;
+}
+
 function renderTape(it, i) {
     return `
           <button type="button" class="tape" data-open="${escapeHtml(it.id)}" data-type="${it.type}" data-group="${it.group}"
@@ -269,7 +321,7 @@ function renderTape(it, i) {
           </button>`;
 }
 
-function renderListPage({ message, imdbStreams, rdMaps }) {
+function renderListPage({ message, imdbStreams, rdMaps, accountInfos }) {
     const entries = Object.entries(imdbStreams);
     const items = entries.map(([imdbId, s]) => {
         const summary = rdSummary(s, rdMaps);
@@ -371,6 +423,7 @@ ${headTags("Biblioteca · JFuster RD")}
         setTimeout(close, t.querySelector('.err') ? 10000 : 4000);
       })();
     </script>` : ""}
+    ${renderAccountAlert(accountInfos)}
     ${hero}
 
     <section id="buscar">
@@ -390,6 +443,7 @@ ${headTags("Biblioteca · JFuster RD")}
       </div>` : ""}
       ${grid}
     </section>
+    ${renderAccounts(accountInfos)}
   </main>
   </div>
 
@@ -2149,8 +2203,8 @@ module.exports = async (req, res) => {
                 },
             }));
         }
-        const rdMaps = await fetchRdMaps();
-        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps }));
+        const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
+        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos }));
     }
 
     if (req.method !== "POST") {
@@ -2334,8 +2388,8 @@ module.exports = async (req, res) => {
         // Se renderiza aquí mismo con "current" (recién escrito) en vez de
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
-        const rdMaps = await fetchRdMaps();
-        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps }));
+        const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
+        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps, accountInfos }));
     } catch (err) {
         return addPageError(500, `<div class="msg err">${escapeHtml(err.message)}</div>`);
     }
