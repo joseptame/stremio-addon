@@ -86,7 +86,7 @@ function libraryStyles() {
   .review-box { margin: 0 0 22px; padding: 16px; border-radius: var(--radius); background: var(--err-soft); border: 1px solid rgba(255,107,129,0.3); }
   .review-box[hidden] { display: none; }
   .review-box p { margin: 0 0 12px; font-size: 0.88rem; line-height: 1.5; color: #ffc0ca; }
-  details.tech { margin-bottom: 22px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+  details.tech { margin-top: 18px; margin-bottom: 22px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
   details.tech summary { cursor: pointer; padding: 12px 16px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-mute); }
   .tech-list { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: center; margin: 0; padding: 4px 16px 16px; font-size: 0.84rem; }
   .tech-list dt { color: var(--text-mute); }
