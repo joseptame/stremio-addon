@@ -1184,7 +1184,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
           <span class="step-num" id="step2-num">2</span>
           <h2 class="step-title">La copia</h2>
           <div class="segmented" role="tablist" aria-label="Origen de la copia">
-            <button type="button" data-mode="prowlarr" class="${v.prowlarrMode ? "active" : ""}">${icon("search", 16)} <span><span class="seg-extra">Buscar en </span>Prowlarr</span></button>
+            <button type="button" data-mode="prowlarr" class="${v.prowlarrMode ? "active" : ""}">${icon("search", 16)} <span><span class="seg-extra">Buscar en </span>${process.env.JACKETT_URL ? "Jackett" : "Prowlarr"}</span></button>
             <button type="button" data-mode="manual" class="${v.prowlarrMode ? "" : "active"}">${icon("magnet", 16)} <span><span class="seg-extra">Pegar </span>magnet</span></button>
           </div>
         </div>
