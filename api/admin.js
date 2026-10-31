@@ -1584,6 +1584,10 @@ function addStyles() {
   .ep-group > summary { cursor: pointer; padding: 8px 4px; font-size: 0.82rem; color: var(--text-dim); }
   .ep-group[open] { display: grid; gap: 10px; }
   .ep-note { margin: 0; font-size: 0.76rem; color: var(--text-mute); }
+  .season-more { justify-self: start; margin: 2px 4px; }
+  .season-other { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; font-size: 0.84rem; color: var(--text-dim); }
+  .season-other .select { width: auto; min-height: 38px; }
+  .season-other .btn { min-height: 38px; }
   .search-warn { margin-bottom: 12px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.82rem; line-height: 1.45;
     color: var(--gold); background: rgba(255,194,71,0.08); border: 1px solid rgba(255,194,71,0.3); }
   .wish-box p { margin: 0 0 12px; font-size: 0.86rem; line-height: 1.5; color: var(--text-dim); }
@@ -1973,6 +1977,9 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         });
         sel.innerHTML = html;
         if (!sel.value) sel.value = '1';
+        // La lista de copias ofrece buscar cualquier temporada: se repinta
+        // ahora que se sabe cuántas hay.
+        if (lastResults.length && contentType() === 'series') renderReleases();
       }
 
       // Temporada/capítulo: buscando en Jackett se rellenan solos al elegir
@@ -2374,9 +2381,54 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
               (g.eps.length ? '<details class="ep-group"' + (g.packs.length ? '' : ' open') + '><summary>Capítulos sueltos (' + g.eps.length + ')</summary>' +
                 '<p class="ep-note">Se guardan como capítulos sueltos: puedes añadir varios de la misma temporada.</p>' +
                 g.eps.map(function (x) { return releaseRow(x.r, n++); }).join('') + '</details>' : '') +
+              (/^\\d+$/.test(key) ? '<button type="button" class="link-btn season-more" data-more="' + key + '">Buscar más de la temporada ' + key + '</button>' : '') +
             '</div></details>';
-        }).join('');
+        }).join('') + otherSeasonHtml(keys);
       }
+
+      // Al final: buscar una temporada que no ha salido en la búsqueda.
+      function otherSeasonHtml(keys) {
+        var options = Array.prototype.slice.call(document.getElementById('season-field').options)
+          .map(function (o) { return o.value; })
+          .filter(function (v) { return /^\\d+$/.test(v); });
+        if (!options.length) return '';
+        return '<div class="season-other">¿Falta una temporada? <select class="select" id="season-other">' +
+          options.map(function (v) { return '<option value="' + v + '">Temporada ' + v + (keys.indexOf(v) === -1 ? '' : ' ✓') + '</option>'; }).join('') +
+          '</select> <button type="button" class="btn btn-ghost" data-more-select>Buscar</button></div>';
+      }
+
+      // Búsqueda de una temporada concreta: sus resultados se suman a los
+      // que ya hay (sin repetir) y se abre su grupo.
+      function searchSeason(season, btn) {
+        var q = queryInput.value.trim();
+        if (!q) return;
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Buscando…'; }
+        fetch('/api/prowlarr-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: q, scope: 'tv', indexer: indexerSelect.value, originalName: originalQueryInput.value, season: season }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            var seen = {};
+            var key = function (r) { return (r.magnet || r.downloadRef || r.indexer + '|' + r.title).toLowerCase(); };
+            lastResults.forEach(function (r) { seen[key(r)] = true; });
+            (data.results || []).forEach(function (r) { if (!seen[key(r)]) { seen[key(r)] = true; lastResults.push(r); } });
+            document.getElementById('season-field').value = String(season);
+            syncEpisodeField();
+            renderReleases();
+            var g = releasesEl.querySelector('.season-group[data-season="' + season + '"]');
+            if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            else if (btn) { btn.disabled = false; btn.textContent = 'No hay nada de la temporada ' + season; }
+          })
+          .catch(function () { if (btn) { btn.disabled = false; btn.textContent = 'No se pudo buscar'; } });
+      }
+      releasesEl.addEventListener('click', function (e) {
+        var more = e.target.closest('[data-more]');
+        if (more) { searchSeason(more.dataset.more, more); return; }
+        var other = e.target.closest('[data-more-select]');
+        if (other) searchSeason(document.getElementById('season-other').value, other);
+      });
 
       function renderReleases() {
         var list = visibleResults();
