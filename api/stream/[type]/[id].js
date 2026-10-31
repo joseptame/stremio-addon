@@ -1,5 +1,6 @@
 const { CORTOS, IMDB_STREAMS } = require("../../../lib/data");
 const { resolveRealDebridLink, parseRdKeyFromConfig } = require("../../../lib/realdebrid");
+const { copyForSeason } = require("../../../lib/series");
 
 module.exports = async (req, res) => {
     res.setHeader("Content-Type", "application/json");
@@ -17,6 +18,7 @@ module.exports = async (req, res) => {
     let name;
     let title;
     let directUrl;
+    let episode = null;
 
     // Caso 1: uno de los cortos propios (id "cortos-*")
     const corto = CORTOS.find((c) => c.id === id);
@@ -29,11 +31,23 @@ module.exports = async (req, res) => {
     } else if (baseId.startsWith("tt") && IMDB_STREAMS[baseId]) {
         // Caso 2: id de IMDb (tt...) -> engancha stream a una ficha ya existente
         const s = IMDB_STREAMS[baseId];
-        infoHash = s.infoHash.toLowerCase();
-        sources = s.sources;
         name = "JFuster RD";
-        title = s.title;
         directUrl = s.url || null;
+        // Series (ttXXX:T:E): la copia de esa temporada (o el pack completo)
+        // y, dentro, el fichero de ese episodio.
+        const [, season, ep] = id.split(":");
+        if (season && ep) {
+            const copy = copyForSeason(s, season);
+            if (!copy) return res.status(200).json({ streams: [] });
+            infoHash = copy.infoHash.toLowerCase();
+            sources = copy.sources;
+            title = `${s.title || s.name} · T${season}E${ep}`;
+            episode = { season, episode: ep, singleSeason: copy.key !== "all" };
+        } else {
+            infoHash = s.infoHash.toLowerCase();
+            sources = s.sources;
+            title = s.title;
+        }
     } else {
         return res.status(200).json({ streams: [] });
     }
@@ -41,7 +55,7 @@ module.exports = async (req, res) => {
     const streams = [];
 
     if (rdKey) {
-        const rdUrl = await resolveRealDebridLink(rdKey, infoHash, sources);
+        const rdUrl = await resolveRealDebridLink(rdKey, infoHash, sources, episode);
         if (rdUrl) {
             streams.push({
                 name: "Real-Debrid",

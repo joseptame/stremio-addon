@@ -6,6 +6,7 @@ const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { escapeHtml, icon, headTags, themeCss, isLocal, renderTopBar, renderBottomNav } = require("../lib/ui");
 const { checkWish, readWishlist, writeWishlist } = require("../lib/wishlist");
+const { seasonLabel, entryCopies, entryHashes } = require("../lib/series");
 
 // Lista de deseos tal como está en este despliegue (cada cambio es un
 // commit y Vercel redespliega en ~1 min; tras añadir o quitar se pinta con
@@ -90,6 +91,14 @@ function libraryStyles() {
   .tape-badge.downloading { color: var(--gold); }
   .tape-badge.none { color: var(--text-dim); }
   .tape-badge.review { color: var(--err); }
+  .season-list { display: grid; gap: 8px; margin-bottom: 12px; }
+  .season-item { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; padding: 11px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 0.86rem; }
+  .season-item .ok { color: var(--ok); font-weight: 600; }
+  .season-item .dl { color: var(--gold); font-weight: 600; }
+  .season-item .bad { color: var(--err); font-weight: 600; }
+  .season-item a { color: var(--text-dim); font-size: 0.8rem; text-decoration: underline; }
+  .season-empty { margin: 0 0 12px; font-size: 0.84rem; color: var(--text-mute); }
+  .season-add { min-height: 36px; font-size: 0.82rem; }
   .account-alert { margin-top: 18px; }
   .wish-row { margin: 26px 0 34px; scroll-margin-top: 90px; }
   .tape.wish { text-decoration: none; color: inherit; }
@@ -137,6 +146,7 @@ function libraryStyles() {
     box-shadow: 0 20px 40px -12px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.1); }
   .sheet-title { font: 400 2.6rem/0.95 var(--font-display); letter-spacing: 0.02em; margin: 0 0 12px; }
   .sheet-section { margin-top: 28px; }
+  .sheet-section[hidden] { display: none; }
   .sheet-section h4 { margin: 0 0 12px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-mute); }
   .rd-list { display: grid; gap: 10px; }
   .rd-notify { margin-top: 10px; min-height: 36px; font-size: 0.82rem; }
@@ -370,18 +380,32 @@ function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, 
     const entries = Object.entries(imdbStreams);
     const items = entries.map(([imdbId, s]) => {
         const summary = rdSummary(s, rdMaps);
+        const isSeries = s.type === "series";
+        // Series: estado de cada temporada; la serie va a "Listas" si alguna
+        // temporada se puede ver, a "Descargando" si alguna avanza, y si no
+        // a "Revisar".
+        const seasons = isSeries
+            ? entryCopies(s).map((c) => {
+                const cs = rdSummary(c, rdMaps);
+                return { key: c.key, label: seasonLabel(c.key), group: cs.group, pct: cs.pct };
+            })
+            : [];
+        const group = !isSeries || !seasons.length ? summary.group
+            : seasons.some((x) => x.group === "ready") ? "ready"
+            : seasons.some((x) => x.group === "downloading") ? "downloading" : "review";
         return {
             id: imdbId,
             name: s.name || s.title || imdbId,
             title: s.title || "",
-            type: s.type === "series" ? "series" : "movie",
+            type: isSeries ? "series" : "movie",
             poster: posterHd(s.poster),
             backdrop: backdropFor(imdbId),
             infoHash: s.infoHash || "",
             hasTrackers: Array.isArray(s.sources) && s.sources.length > 0,
             rd: summary.all,
-            group: summary.group,
-            pct: summary.pct,
+            group,
+            pct: group === summary.group ? summary.pct : (group === "ready" ? 100 : Math.max(0, ...seasons.map((x) => x.pct))),
+            seasons,
         };
     });
 
@@ -528,11 +552,16 @@ ${headTags("Biblioteca · JFuster RD")}
           <p class="sheet-tagline" id="sheet-tagline"></p>
           <div class="sheet-overview" id="sheet-overview"></div>
         </div>
+        <div class="sheet-section" id="sheet-seasons" hidden>
+          <h4>Temporadas</h4>
+          <div class="season-list" id="season-list"></div>
+          <a class="btn btn-ghost season-add" id="season-add" href="#">${icon("plus", 16)} Añadir temporada</a>
+        </div>
         <div class="review-box" id="sheet-review" hidden>
           <p id="sheet-review-text"></p>
           <a class="btn btn-primary" id="sheet-review-btn" href="#">${icon("search", 17)} Buscar otra copia</a>
         </div>
-        <div class="sheet-section">
+        <div class="sheet-section" id="sheet-rd-section">
           <h4>Real-Debrid</h4>
           <div class="rd-list" id="sheet-rd"></div>
           <button type="button" class="btn btn-ghost rd-notify" id="sheet-notify" hidden>🔔 Avisarme cuando esté lista</button>
@@ -659,6 +688,7 @@ ${headTags("Biblioteca · JFuster RD")}
         document.getElementById('sheet-tech-link').textContent = it.hasTrackers ? 'Torrent con trackers' : 'Magnet sin trackers';
         document.getElementById('sheet-review-btn').href = '/admin/add?edit=' + encodeURIComponent(it.id);
         overlay.querySelector('details.tech').open = false;
+        renderSeasons(it);
         renderRd(it);
         loadDetails(it);
         document.getElementById('sheet-hash').textContent = it.infoHash;
@@ -690,6 +720,27 @@ ${headTags("Biblioteca · JFuster RD")}
         }, 2500);
       });
 
+      // Series: cada temporada con su estado y un enlace para cambiar su
+      // copia; abajo, añadir la siguiente temporada.
+      function renderSeasons(it) {
+        var box = document.getElementById('sheet-seasons');
+        box.hidden = it.type !== 'series';
+        // En una serie el estado va por temporada (arriba); el de las cuentas
+        // sería solo el de una de ellas y confundiría.
+        document.getElementById('sheet-rd-section').hidden = !box.hidden;
+        if (box.hidden) return;
+        var edit = '/admin/add?edit=' + encodeURIComponent(it.id) + '&season=';
+        var list = it.seasons || [];
+        document.getElementById('season-list').innerHTML = list.length ? list.map(function (s) {
+          var state = s.group === 'ready' ? '<span class="ok">✓ Lista</span>'
+            : s.group === 'downloading' ? '<span class="dl">' + s.pct + '%</span>' : '<span class="bad">Revisar</span>';
+          return '<div class="season-item"><b>' + esc(s.label) + '</b>' + state +
+            '<a href="' + edit + encodeURIComponent(s.key) + '">Cambiar</a></div>';
+        }).join('') : '<p class="season-empty">Aún sin temporadas.</p>';
+        var numbers = list.map(function (s) { return Number(s.key); }).filter(function (n) { return n > 0; });
+        document.getElementById('season-add').href = edit + (numbers.length ? Math.max.apply(null, numbers) + 1 : 1);
+      }
+
       function anyReady(it) {
         return it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
       }
@@ -705,8 +756,10 @@ ${headTags("Biblioteca · JFuster RD")}
             '<div class="bar"><span class="' + (ready ? 'ready' : '') + '" style="width:' + a.pct + '%"></span></div>' +
             '<span class="state' + (ready ? ' ready' : '') + '">' + (ready ? '✓ Listo' : esc(a.label)) + '</span></div>';
         }).join('');
-        document.getElementById('sheet-watch').style.display = anyReady(it) ? '' : 'none';
-        var review = summarize(it).group === 'review';
+        // Las series se ven en Stremio (episodio a episodio); el reproductor
+        // del panel no sabría qué episodio abrir.
+        document.getElementById('sheet-watch').style.display = anyReady(it) && it.type !== 'series' ? '' : 'none';
+        var review = (it.type === 'series' ? it.group : summarize(it).group) === 'review';
         document.getElementById('sheet-review').hidden = !review;
         if (review) {
           var inRd = it.rd.some(function (a) { return a.state === 'ok'; });
@@ -1426,6 +1479,9 @@ function addStyles() {
   .release.other-year:not(.selected) { opacity: 0.5; }
   .wish-box { margin-top: 18px; padding: 16px; border-radius: var(--radius-sm); border: 1px dashed var(--line); background: var(--surface); }
   .wish-box[hidden] { display: none; }
+  .season-row { margin: 0 0 18px; }
+  .season-row[hidden] { display: none; }
+  .season-row .select { width: 100%; max-width: 320px; }
   .search-warn { margin-bottom: 12px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.82rem; line-height: 1.45;
     color: var(--gold); background: rgba(255,194,71,0.08); border: 1px solid rgba(255,194,71,0.3); }
   .wish-box p { margin: 0 0 12px; font-size: 0.86rem; line-height: 1.5; color: var(--text-dim); }
@@ -1480,8 +1536,21 @@ function addStyles() {
 }
 
 // ── Página de añadir / editar (ficha con portada + búsqueda) ──────
+// Opciones del selector de temporada: "Serie completa" y de la 1 a la N,
+// marcando las que ya tienen copia.
+function seasonOptions(count, existing, selected) {
+    const sel = String(selected || "1");
+    const opt = (key) => `<option value="${key}"${key === sel ? " selected" : ""}>${seasonLabel(key)}${existing.includes(key) ? " · ya tiene copia" : ""}</option>`;
+    const keys = ["all", ...Array.from({ length: count }, (_, i) => String(i + 1))];
+    return keys.map(opt).join("");
+}
+
 function renderAddPage({ message, editId, values, wish }) {
     const editing = !!editId;
+    // Temporadas que ya tienen copia (al editar una serie).
+    const existingSeasons = editId && IMDB_STREAMS[editId] && IMDB_STREAMS[editId].type === "series"
+        ? entryCopies(IMDB_STREAMS[editId]).map((c) => c.key)
+        : [];
     const v = Object.assign({
         imdbId: "", title: "", magnet: "", poster: "", type: "movie",
         rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
@@ -1573,6 +1642,12 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             <button type="button" data-mode="prowlarr" class="${v.prowlarrMode ? "active" : ""}">${icon("search", 16)} <span><span class="seg-extra">Buscar en </span>${process.env.JACKETT_URL ? "Jackett" : "Prowlarr"}</span></button>
             <button type="button" data-mode="manual" class="${v.prowlarrMode ? "" : "active"}">${icon("magnet", 16)} <span><span class="seg-extra">Pegar </span>magnet</span></button>
           </div>
+        </div>
+
+        <div class="season-row" id="season-row"${isSeries ? "" : " hidden"}>
+          <label class="field-label" for="season-field">Temporada de esta copia</label>
+          <select class="select" name="season" id="season-field">${seasonOptions(Math.max(1, ...existingSeasons.filter((k) => k !== "all").map(Number), Number(v.season) || 1), existingSeasons, v.season)}</select>
+          <p class="hint">Cada temporada lleva su propia copia; elige "Serie completa" si el torrent trae todas.</p>
         </div>
 
         <div id="manual-panel">
@@ -1773,6 +1848,23 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         }
       }
 
+      // ── Temporada (series) ──
+      // Al conocer cuántas temporadas tiene (TMDB), se rehace el selector
+      // con todas, conservando la elegida y marcando las que ya tienen copia.
+      var EXISTING_SEASONS = ${JSON.stringify(existingSeasons)};
+      function setSeasonCount(n) {
+        var sel = document.getElementById('season-field');
+        var chosen = sel.value;
+        var html = '';
+        ['all'].concat(Array.from({ length: n }, function (_, i) { return String(i + 1); })).forEach(function (key) {
+          html += '<option value="' + key + '"' + (key === chosen ? ' selected' : '') + '>' +
+            (key === 'all' ? 'Serie completa' : 'Temporada ' + key) +
+            (EXISTING_SEASONS.indexOf(key) !== -1 ? ' · ya tiene copia' : '') + '</option>';
+        });
+        sel.innerHTML = html;
+        if (!sel.value) sel.value = '1';
+      }
+
       // ── Tipo (película / serie) ──
       document.querySelectorAll('[data-type]').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -1780,6 +1872,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
           document.querySelectorAll('[data-type]').forEach(function (b) { b.classList.toggle('active', b === btn); });
           typeField.value = btn.dataset.type;
           var isSeries = btn.dataset.type === 'series';
+          document.getElementById('season-row').hidden = !isSeries;
           document.querySelector('#step-film .step-title').textContent = isSeries ? 'Serie' : 'Película';
           searchInput.placeholder = isSeries ? 'Busca una serie...' : 'Busca una película...';
           clearFilm();
@@ -1842,6 +1935,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             var d = data && data.details;
             if (!d || filmEl._film !== film) return d;
             setTrailer(d.trailerKey);
+            if (d.seasons) setSeasonCount(d.seasons);
             return d;
           })
           .catch(function () { return null; });
@@ -2271,7 +2365,7 @@ function rdErrorText(code) {
 async function removeFromRdIfUnused(infoHash, catalog) {
     const hash = String(infoHash || "").toLowerCase();
     if (!hash) return "";
-    const stillUsed = Object.values(catalog).some((e) => String(e.infoHash || "").toLowerCase() === hash);
+    const stillUsed = Object.values(catalog).some((e) => entryHashes(e).includes(hash));
     if (stillUsed) return "";
     try {
         const accounts = await deleteTorrentsByHash(hash);
@@ -2328,6 +2422,7 @@ module.exports = async (req, res) => {
                     magnet: "",
                     poster: entry ? (entry.poster || "") : wish ? wish.poster : "",
                     type: entry ? (entry.type || "movie") : wish ? wish.type : "movie",
+                    season: /^(all|\d+)$/.test(String(req.query.season || "")) ? String(req.query.season) : "1",
                     rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
                     prowlarrMode: !editId,
                 },
@@ -2344,7 +2439,7 @@ module.exports = async (req, res) => {
         }));
     }
 
-    const { imdbId, magnet, title, action, prowlarrMode, downloadRef, type } = req.body || {};
+    const { imdbId, magnet, title, action, prowlarrMode, downloadRef, type, season } = req.body || {};
     const rdCache = {};
     RD_ACCOUNTS.forEach((acc) => { rdCache[acc.id] = !!(req.body || {})["rdCache" + acc.id]; });
     const contentType = type === "series" ? "series" : "movie";
@@ -2410,11 +2505,13 @@ module.exports = async (req, res) => {
                 }));
             }
             const removedName = current[imdbId].name || current[imdbId].title || imdbId;
-            const removedHash = current[imdbId].infoHash;
+            // Todas sus copias (una serie puede tener una por temporada).
+            const removedHashes = entryHashes(current[imdbId]);
             delete current[imdbId];
 
             await writeImdbStreamsToGitHub(ghHeaders, apiUrl, current, sha, `Eliminar stream de ${imdbId} vía panel admin`);
-            const rdNote = await removeFromRdIfUnused(removedHash, current);
+            let rdNote = "";
+            for (const hash of removedHashes) rdNote = (await removeFromRdIfUnused(hash, current)) || rdNote;
 
             return res.status(200).send(renderListPage({
                 imdbStreams: current,
@@ -2435,6 +2532,7 @@ module.exports = async (req, res) => {
         title: title || "",
         magnet: magnet || "",
         type: contentType,
+        season: String(season || "1"),
         rdCache,
         prowlarrMode: prowlarrMode === "1",
     };
@@ -2465,6 +2563,11 @@ module.exports = async (req, res) => {
     try {
         const { data: current, sha, apiUrl } = await readImdbStreamsFromGitHub(ghHeaders);
         const existing = current[imdbId];
+        // Series: cada copia va en su temporada ("all" = serie completa).
+        const seasonKey = contentType === "series"
+            ? (/^\d+$/.test(String(season || "")) ? String(Number(season)) : "all")
+            : null;
+        const existingSeasonCopy = seasonKey ? entryCopies(existing).find((c) => c.key === seasonKey) : null;
 
         let parsed;
         if (magnet && magnet.trim()) {
@@ -2473,6 +2576,12 @@ module.exports = async (req, res) => {
             } catch (err) {
                 return addPageError(400, `<div class="msg err">${escapeHtml(err.message)}</div>`);
             }
+        } else if (existing && seasonKey) {
+            // Serie sin magnet nuevo: se conserva la copia de esa temporada.
+            if (!existingSeasonCopy) {
+                return addPageError(400, `<div class="msg err">Falta el magnet de la ${escapeHtml(seasonLabel(seasonKey).toLowerCase())}.</div>`);
+            }
+            parsed = { infoHash: existingSeasonCopy.infoHash, sources: existingSeasonCopy.sources };
         } else if (existing) {
             parsed = { infoHash: existing.infoHash, sources: existing.sources };
         } else {
@@ -2538,6 +2647,15 @@ module.exports = async (req, res) => {
             poster: (cinemeta && cinemeta.poster) || (existing && existing.poster) || null,
             type: contentType,
         };
+        if (seasonKey) {
+            // Se conservan las demás temporadas y se pone (o cambia) esta.
+            const seasons = {};
+            entryCopies(existing).forEach((c) => {
+                if (c.key) seasons[c.key] = { infoHash: c.infoHash, sources: c.sources, title: c.title };
+            });
+            seasons[seasonKey] = { infoHash: parsed.infoHash, sources: parsed.sources, title: title.trim() };
+            current[imdbId].seasons = seasons;
+        }
 
         await writeImdbStreamsToGitHub(
             ghHeaders,
@@ -2560,8 +2678,10 @@ module.exports = async (req, res) => {
         }
 
         // Al cambiar de copia, la anterior se borra de RD si ya no la usa nadie.
-        const oldCopyNote = existing && existing.infoHash && existing.infoHash.toLowerCase() !== parsed.infoHash.toLowerCase()
-            ? ((await removeFromRdIfUnused(existing.infoHash, current)) ? " Copia anterior borrada de RD." : "")
+        // (En una serie, la anterior de esa misma temporada.)
+        const previousCopy = seasonKey ? existingSeasonCopy : existing;
+        const oldCopyNote = previousCopy && previousCopy.infoHash && previousCopy.infoHash.toLowerCase() !== parsed.infoHash.toLowerCase()
+            ? ((await removeFromRdIfUnused(previousCopy.infoHash, current)) ? " Copia anterior borrada de RD." : "")
             : "";
 
         // Si RD rechazó la copia en alguna cuenta, el aviso sale como error:

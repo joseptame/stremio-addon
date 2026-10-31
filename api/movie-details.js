@@ -4,6 +4,7 @@ const { isAuthenticated } = require("../lib/adminAuth");
 const { runWishlistCheck } = require("../lib/wishlist");
 const { isPushConfigured, saveSubscription, sendToAll } = require("../lib/push");
 const { IMDB_STREAMS } = require("../lib/data");
+const { entryCopies, seasonLabel } = require("../lib/series");
 
 // Ventana de la comprobación de descargas: algo más que su intervalo de 15
 // min, porque GitHub Actions a veces la lanza con unos minutos de retraso.
@@ -16,7 +17,10 @@ const DOWNLOADS_WINDOW_MS = 20 * 60 * 1000;
 async function recentlyFinished(windowMs) {
     const byHash = {};
     Object.values(IMDB_STREAMS).forEach((e) => {
-        if (e.infoHash) byHash[e.infoHash.toLowerCase()] = e.name || e.title;
+        entryCopies(e).forEach((c) => {
+            const name = e.name || e.title;
+            if (c.infoHash) byHash[c.infoHash.toLowerCase()] = c.key && c.key !== "all" ? `${name} (${seasonLabel(c.key)})` : name;
+        });
     });
     const since = Date.now() - windowMs;
     const found = new Map();
