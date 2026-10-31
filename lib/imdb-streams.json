@@ -72,5 +72,32 @@
     "name": "Gladiator",
     "poster": "https://images.metahub.space/poster/small/tt0172495/img",
     "type": "movie"
+  },
+  "tt0247902": {
+    "infoHash": "fd9af9483caf9df9c29f3a453060834c96416d54",
+    "sources": [
+      "tracker:udp://tracker.bitsearch.to:1337/announce",
+      "tracker:udp://tracker.opentrackr.org:1337/announce",
+      "tracker:udp://ipv4.tracker.harry.lu:80/announce",
+      "tracker:udp://tracker.moeking.me:6969/announce",
+      "tracker:udp://tracker.torrent.eu.org:451/announce"
+    ],
+    "title": "Yu-Gi-Oh! Duel Monsters",
+    "name": "Yu-Gi-Oh! Duel Monsters",
+    "poster": "https://images.metahub.space/poster/small/tt0247902/img",
+    "type": "series",
+    "seasons": {
+      "all": {
+        "infoHash": "fd9af9483caf9df9c29f3a453060834c96416d54",
+        "sources": [
+          "tracker:udp://tracker.bitsearch.to:1337/announce",
+          "tracker:udp://tracker.opentrackr.org:1337/announce",
+          "tracker:udp://ipv4.tracker.harry.lu:80/announce",
+          "tracker:udp://tracker.moeking.me:6969/announce",
+          "tracker:udp://tracker.torrent.eu.org:451/announce"
+        ],
+        "title": "Yu-Gi-Oh! Duel Monsters"
+      }
+    }
   }
 }
