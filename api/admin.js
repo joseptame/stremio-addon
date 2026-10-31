@@ -1211,7 +1211,6 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
               <button type="button" class="chip" data-sort="size">Tamaño</button>
               <button type="button" class="chip" data-sort="year">Año</button>
             </div>
-            <label class="chip"><input type="checkbox" id="prowlarr-es"> 🇪🇸 Solo España</label>
           </div>
           <div class="releases" id="releases">
             <div class="empty-box">${icon("film", 28)}Elige una película arriba o escribe un título y pulsa Buscar.</div>
@@ -1278,7 +1277,6 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
           }).join('');
         })
         .catch(function () {});
-      var esCheckbox = document.getElementById('prowlarr-es');
       var releasesEl = document.getElementById('releases');
       var selectedRelease = null;
       var lastResults = [];
@@ -1553,7 +1551,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       function seedClass(n) { return n == null ? '' : n >= 20 ? 'hot' : n >= 5 ? 'warm' : 'cold'; }
 
       function visibleResults() {
-        var list = esCheckbox.checked ? lastResults.filter(function (r) { return r.isSpainSpanish; }) : lastResults.slice();
+        var list = lastResults.slice();
         if (!sortKey) return list;
         return list.sort(function (a, b) {
           var av = a[sortKey], bv = b[sortKey];
@@ -1576,7 +1574,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       function renderReleases() {
         var list = visibleResults();
         if (!list.length) {
-          releasesEl.innerHTML = '<div class="empty-box">Sin resultados' + (esCheckbox.checked ? ' en castellano de España' : '') + '.</div>';
+          releasesEl.innerHTML = '<div class="empty-box">Sin resultados.</div>';
           return;
         }
         releasesEl.innerHTML = list.map(function (r, i) {
@@ -1666,7 +1664,6 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
 
       document.getElementById('prowlarr-search-btn').addEventListener('click', runSearch);
       queryInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
-      esCheckbox.addEventListener('change', function () { if (lastResults.length) renderReleases(); });
       document.querySelectorAll('[data-sort]').forEach(function (chip) {
         chip.addEventListener('click', function () {
           document.querySelectorAll('[data-sort]').forEach(function (c) { c.classList.toggle('active', c === chip); });
