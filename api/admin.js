@@ -1229,6 +1229,8 @@ function addStyles() {
   .release:hover .release-go { color: var(--text); border-color: var(--text-mute); }
   .release.selected .release-go { background: var(--accent); border-color: var(--accent); color: #fff; }
   .release-go.err { color: var(--err); border-color: rgba(255,107,129,0.4); }
+  .release.other-year:not(.selected) { opacity: 0.5; }
+  .other-note { margin-top: 6px; font-size: 0.74rem; color: var(--gold); }
   .empty-box { padding: 34px 16px; text-align: center; color: var(--text-dim); font-size: 0.9rem; border: 1px dashed var(--line-strong); border-radius: 12px; }
   .empty-box .icon { margin: 0 auto 10px; color: var(--text-mute); }
   .skeleton-row { height: 90px; border-radius: 12px; }
@@ -1660,6 +1662,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
 
       function chooseFilm(m) {
         filmEl._film = m;
+        filmYear = m.releaseInfo || '';
         setFilm(m);
         filmSearch.style.display = 'none';
         titleField.value = m.name;
@@ -1739,16 +1742,37 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
 
       function seedClass(n) { return n == null ? '' : n >= 20 ? 'hot' : n >= 5 ? 'warm' : 'cold'; }
 
+      // Varias películas pueden llamarse igual (Resident Evil 2002, 2021...):
+      // si el título de la copia lleva un año que no es el de la película
+      // elegida (con ±1 de margen, por los estrenos en España), se marca
+      // como "de otra película" y va al final. Los años que forman parte del
+      // propio título ("Blade Runner 2049") no cuentan. Solo en películas:
+      // cada temporada de una serie sale en un año distinto.
+      var filmYear = '';
+      function otherYear(r) {
+        if (!filmYear || contentType() === 'series') return null;
+        var names = (titleField.value + ' ' + originalQueryInput.value).toLowerCase();
+        var years = (String(r.title || '').match(/\\b(19|20)\\d{2}\\b/g) || [])
+          .filter(function (y) { return names.indexOf(y) === -1; });
+        if (!years.length) return null;
+        var near = years.some(function (y) { return Math.abs(Number(y) - Number(filmYear)) <= 1; });
+        return near ? null : years[0];
+      }
+
       function visibleResults() {
         var list = lastResults.slice();
-        if (!sortKey) return list;
-        return list.sort(function (a, b) {
-          var av = a[sortKey], bv = b[sortKey];
-          if (av == null && bv == null) return 0;
-          if (av == null) return 1;
-          if (bv == null) return -1;
-          return bv - av;
-        });
+        if (sortKey) {
+          list.sort(function (a, b) {
+            var av = a[sortKey], bv = b[sortKey];
+            if (av == null && bv == null) return 0;
+            if (av == null) return 1;
+            if (bv == null) return -1;
+            return bv - av;
+          });
+        }
+        // Las de otra película, al final (manteniendo el orden elegido).
+        return list.filter(function (r) { return !otherYear(r); })
+          .concat(list.filter(function (r) { return otherYear(r); }));
       }
 
       function markSelected(row) {
@@ -1769,7 +1793,8 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         releasesEl.innerHTML = list.map(function (r, i) {
           var idx = lastResults.indexOf(r);
           var isSel = selectedRelease === r;
-          return '<button type="button" class="release' + (isSel ? ' selected' : '') + '" data-idx="' + idx + '" style="--i:' + Math.min(i, 15) + '">' +
+          var other = otherYear(r);
+          return '<button type="button" class="release' + (isSel ? ' selected' : '') + (other ? ' other-year' : '') + '" data-idx="' + idx + '" style="--i:' + Math.min(i, 15) + '">' +
             '<div class="release-thumb">' + (r.poster ? '<img src="' + esc(r.poster) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '</div>' +
             '<div class="release-main">' +
               '<div class="release-title">' + esc(r.title) + '</div>' +
@@ -1780,6 +1805,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
                 (r.year ? '<span>' + esc(r.year) + '</span>' : '') +
                 '<span>' + esc(r.indexer || '') + '</span>' +
               '</div>' +
+              (other ? '<div class="other-note">Parece de otra película (' + esc(other) + ')</div>' : '') +
             '</div>' +
             '<span class="release-go">' + (isSel ? '✓ Elegida' : 'Elegir') + '</span>' +
           '</button>';
@@ -1909,6 +1935,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             if (d.overview) document.getElementById('film-overview').textContent = d.overview;
             var meta = document.getElementById('film-meta');
             if (d.year) meta.insertAdjacentHTML('beforeend', '<span class="tag">' + esc(d.year) + '</span>');
+            if (d.year) { filmYear = String(d.year); if (lastResults.length) renderReleases(); }
             if (d.rating) meta.insertAdjacentHTML('beforeend', '<span class="tag gold">★ ' + esc(d.rating) + '</span>');
           })
           .catch(function () {});
