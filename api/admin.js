@@ -91,7 +91,7 @@ function libraryStyles() {
   .tape-badge.none { color: var(--text-dim); }
   .tape-badge.review { color: var(--err); }
   .account-alert { margin-top: 18px; }
-  .wish-row { margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
+  .wish-row { margin: 26px 0 34px; scroll-margin-top: 90px; }
   .tape.wish { text-decoration: none; color: inherit; }
   .wish-year { color: var(--text-mute); font-weight: 400; }
   .shelf-row { margin-top: 26px; }
@@ -295,7 +295,7 @@ function renderWishlist(wishlist) {
           </a>`;
     };
     const found = wishes.filter((w) => w.count).map((w) => ({ id: w.imdbId, name: w.name, count: w.count }));
-    return `<section class="wish-row" aria-label="Lista de deseos">
+    return `<section class="wish-row" id="deseos" aria-label="Lista de deseos">
       <div class="row-head">
         <h3 class="row-title">Lista de deseos <span class="count">${wishes.length}</span></h3>
         <p class="row-hint">Las busco cada día; tócala para ver las copias.</p>
@@ -366,7 +366,7 @@ function renderTape(it, i) {
           </button>`;
 }
 
-function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist }) {
+function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, focus }) {
     const entries = Object.entries(imdbStreams);
     const items = entries.map(([imdbId, s]) => {
         const summary = rdSummary(s, rdMaps);
@@ -470,6 +470,8 @@ ${headTags("Biblioteca · JFuster RD")}
     </script>` : ""}
     ${renderAccountAlert(accountInfos)}
     ${hero}
+    ${renderWishlist(wishlist)}
+    ${focus ? `<script>setTimeout(function () { var el = document.getElementById(${JSON.stringify(focus)}); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 150);</script>` : ""}
 
     <section id="buscar">
       <div class="shelf-head">
@@ -488,7 +490,6 @@ ${headTags("Biblioteca · JFuster RD")}
       </div>` : ""}
       ${grid}
     </section>
-    ${renderWishlist(wishlist)}
   </main>
   </div>
 
@@ -2319,7 +2320,7 @@ module.exports = async (req, res) => {
     if (action === "wish-add" || action === "wish-remove") {
         const listPage = async (wishlist, message, status = 200) => {
             const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
-            return res.status(status).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist, message }));
+            return res.status(status).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist, message, focus: "deseos" }));
         };
         try {
             if (!/^tt[0-9]+$/.test(String(imdbId || ""))) throw new Error("ID de IMDb inválido.");
