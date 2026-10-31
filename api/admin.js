@@ -99,7 +99,6 @@ function libraryStyles() {
   .season-item a { color: var(--text-dim); font-size: 0.8rem; text-decoration: underline; }
   .season-item .muted { color: var(--text-mute); font-size: 0.8rem; }
   .season-actions { display: inline-flex; align-items: center; gap: 12px; }
-  .link-btn { padding: 0; border: 0; background: none; color: var(--text-dim); font: inherit; font-size: 0.8rem; text-decoration: underline; cursor: pointer; }
   .play-ep { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 0.72rem; cursor: pointer; }
   .pack-eps { display: grid; gap: 6px; }
   .pack-eps[hidden] { display: none; }
@@ -1568,6 +1567,9 @@ function addStyles() {
   .wish-box[hidden] { display: none; }
   .season-row { margin: 0 0 18px; }
   .season-row[hidden] { display: none; }
+  #season-edit[hidden], .season-summary[hidden] { display: none; }
+  .season-summary { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
+  .season-summary b { color: var(--text); margin-right: 8px; }
   .season-fields { display: flex; gap: 10px; max-width: 460px; }
   .season-fields .select { flex: 1.4; min-width: 0; }
   .season-fields .input { flex: 1; min-width: 0; }
@@ -1745,12 +1747,16 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         </div>
 
         <div class="season-row" id="season-row"${isSeries ? "" : " hidden"}>
+          <p class="season-summary" id="season-summary" hidden>Se guardará como: <b id="season-summary-text"></b>
+            <button type="button" class="link-btn" id="season-change">Cambiar</button></p>
+          <div id="season-edit">
           <label class="field-label" for="season-field">Temporada de esta copia</label>
           <div class="season-fields">
             <select class="select" name="season" id="season-field">${seasonOptions(Math.max(1, ...existingSeasons.filter((k) => k !== "all").map((k) => parseKey(k).season), Number(v.season) || 1), existingSeasons, v.season)}</select>
             <input class="input" type="number" min="1" inputmode="numeric" name="episode" id="episode-field" value="${escapeHtml(v.episode || "")}" placeholder="Capítulo (opcional)" aria-label="Capítulo">
           </div>
           <p class="hint">Sin capítulo, la copia es para toda la temporada ("Serie completa" si trae todas). Con capítulo, es un capítulo suelto: puedes añadir varios por temporada.</p>
+          </div>
         </div>
 
         <div id="manual-panel">
@@ -1931,6 +1937,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
 
       function updateSummary() {
         updateWishBox();
+        updateSeasonRow();
         var title = titleField.value;
         var hasFilm = editing || (!!title && !!imdbIdField.value);
         // La barra de guardar solo aparece con película y copia elegidas
@@ -1968,6 +1975,30 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         if (!sel.value) sel.value = '1';
       }
 
+      // Temporada/capítulo: buscando en Jackett se rellenan solos al elegir
+      // una copia, así que solo se ve una línea "Se guardará como…" (y el
+      // selector si se pulsa Cambiar). Pegando un magnet a mano, o si se ha
+      // llegado desde la ficha con una temporada concreta, se ven siempre.
+      var seasonEditOpen = ${v.seasonPreset ? "true" : "false"};
+      function updateSeasonRow() {
+        var row = document.getElementById('season-row');
+        if (contentType() !== 'series') { row.hidden = true; return; }
+        var manual = !prowlarrMode();
+        var sel = document.getElementById('season-field');
+        var ep = document.getElementById('episode-field').value;
+        var showEdit = manual || seasonEditOpen;
+        row.hidden = !showEdit && !selectedRelease;
+        document.getElementById('season-edit').hidden = !showEdit;
+        document.getElementById('season-summary').hidden = showEdit;
+        document.getElementById('season-summary-text').textContent = sel.value === 'all' ? 'Serie completa'
+          : 'Temporada ' + sel.value + (ep ? ' · Capítulo ' + ep : ' (entera)');
+      }
+      document.getElementById('season-change').addEventListener('click', function () {
+        seasonEditOpen = true;
+        updateSeasonRow();
+      });
+      document.getElementById('episode-field').addEventListener('input', updateSeasonRow);
+
       // Con "Serie completa" no hay capítulo.
       function syncEpisodeField() {
         var ep = document.getElementById('episode-field');
@@ -1980,6 +2011,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       // Al cambiar de temporada se abre su grupo en la lista de copias.
       document.getElementById('season-field').addEventListener('change', function () {
         syncEpisodeField();
+        updateSeasonRow();
         if (lastResults.length && contentType() === 'series') renderReleases();
       });
 
@@ -1990,7 +2022,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
           document.querySelectorAll('[data-type]').forEach(function (b) { b.classList.toggle('active', b === btn); });
           typeField.value = btn.dataset.type;
           var isSeries = btn.dataset.type === 'series';
-          document.getElementById('season-row').hidden = !isSeries;
+          updateSeasonRow();
           document.querySelector('#step-film .step-title').textContent = isSeries ? 'Serie' : 'Película';
           searchInput.placeholder = isSeries ? 'Busca una serie...' : 'Busca una película...';
           clearFilm();
@@ -2611,6 +2643,7 @@ module.exports = async (req, res) => {
                     type: entry ? (entry.type || "movie") : wish ? wish.type : req.query.type === "series" ? "series" : "movie",
                     season: /^(all|\d+)$/.test(String(req.query.season || "")) ? String(req.query.season) : "1",
                     episode: /^\d+$/.test(String(req.query.episode || "")) ? String(req.query.episode) : "",
+                    seasonPreset: !!req.query.season,
                     rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
                     prowlarrMode: !editId,
                 },
@@ -2725,6 +2758,9 @@ module.exports = async (req, res) => {
         type: contentType,
         season: String(season || "1"),
         episode: /^\d+$/.test(String(episode || "")) ? String(episode) : "",
+        // Al volver con un error, la copia elegida se pierde: mejor ver ya
+        // la temporada y el capítulo que se habían puesto.
+        seasonPreset: contentType === "series",
         rdCache,
         prowlarrMode: prowlarrMode === "1",
     };
