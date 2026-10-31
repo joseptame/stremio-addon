@@ -58,5 +58,19 @@
     "name": "Van Helsing",
     "poster": "https://images.metahub.space/poster/small/tt0338526/img",
     "type": "movie"
+  },
+  "tt35538033": {
+    "infoHash": "ffe613f1a9550f8ab84e740c33d5b467b6b382f0",
+    "sources": [
+      "tracker:udp://tracker.bitsearch.to:1337/announce",
+      "tracker:udp://tracker.opentrackr.org:1337/announce",
+      "tracker:udp://tracker.moeking.me:6969/announce",
+      "tracker:udp://tracker.openbittorrent.com:80/announce",
+      "tracker:udp://open.stealth.si:80/announce"
+    ],
+    "title": "Resident Evil",
+    "name": "Resident Evil",
+    "poster": "https://images.metahub.space/poster/small/tt35538033/img",
+    "type": "movie"
   }
 }
