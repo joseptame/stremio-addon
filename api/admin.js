@@ -337,7 +337,17 @@ ${headTags("Biblioteca · JFuster RD")}
   ${renderTopBar("library")}
   <div id="main-wrap">
   <main>
-    ${message ? `<div style="margin-top:20px">${message}</div>` : ""}
+    ${message ? `<div class="toast" id="toast" role="status">${message}</div>
+    <script>
+      // Aviso flotante: los de éxito se van solos a los 4 s, los de error
+      // a los 10 s; tocándolo se cierra antes.
+      (function () {
+        var t = document.getElementById('toast');
+        function close() { t.classList.add('toast-out'); setTimeout(function () { t.remove(); }, 300); }
+        t.addEventListener('click', close);
+        setTimeout(close, t.querySelector('.err') ? 10000 : 4000);
+      })();
+    </script>` : ""}
     ${hero}
 
     <section id="buscar">
@@ -1941,7 +1951,7 @@ module.exports = async (req, res) => {
         // El bloqueo es por hash (igual para todas las cuentas): no se guarda.
         if (rdBlocked) {
             values.magnet = "";
-            return addPageError(409, '<div class="msg err">No se ha guardado: Real-Debrid tiene bloqueada esta copia por derechos de autor. Elige otra copia de la lista.</div>');
+            return addPageError(409, `<div class="msg err">No se ha guardado: Real-Debrid tiene bloqueada esta copia por derechos de autor (enviada como ${method}). Elige otra copia de la lista.</div>`);
         }
 
         const needsMeta = !existing || !existing.poster || !existing.name;
