@@ -1482,6 +1482,17 @@ function addStyles() {
   .season-row { margin: 0 0 18px; }
   .season-row[hidden] { display: none; }
   .season-row .select { width: 100%; max-width: 320px; }
+  .season-group { margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+  .season-group > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 16px; cursor: pointer; list-style: none; }
+  .season-group > summary::-webkit-details-marker { display: none; }
+  .season-group > summary::before { content: "▸"; color: var(--text-mute); margin-right: 8px; transition: transform 0.15s; display: inline-block; }
+  .season-group[open] > summary::before { transform: rotate(90deg); }
+  .season-group > summary b { flex: 1; font-weight: 600; }
+  .season-group > summary span { font-size: 0.78rem; color: var(--text-mute); }
+  .season-group-body { display: grid; gap: 10px; padding: 0 12px 12px; }
+  .ep-group > summary { cursor: pointer; padding: 8px 4px; font-size: 0.82rem; color: var(--text-dim); }
+  .ep-group[open] { display: grid; gap: 10px; }
+  .ep-note { margin: 0; font-size: 0.76rem; color: var(--text-mute); }
   .search-warn { margin-bottom: 12px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.82rem; line-height: 1.45;
     color: var(--gold); background: rgba(255,194,71,0.08); border: 1px solid rgba(255,194,71,0.3); }
   .wish-box p { margin: 0 0 12px; font-size: 0.86rem; line-height: 1.5; color: var(--text-dim); }
@@ -1865,6 +1876,11 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         if (!sel.value) sel.value = '1';
       }
 
+      // Al cambiar de temporada se abre su grupo en la lista de copias.
+      document.getElementById('season-field').addEventListener('change', function () {
+        if (lastResults.length && contentType() === 'series') renderReleases();
+      });
+
       // ── Tipo (película / serie) ──
       document.querySelectorAll('[data-type]').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -2151,13 +2167,29 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         });
       }
 
-      function renderReleases() {
-        var list = visibleResults();
-        if (!list.length) {
-          releasesEl.innerHTML = warningHtml() + '<div class="empty-box">Sin resultados.</div>';
-          return;
+      // ── Series: copias agrupadas por temporada ──
+      // De cada título se saca la temporada y, si es un capítulo suelto, el
+      // episodio: "Temporada 5 [Cap.504]", "S05E04", "5x04"... Los packs
+      // ("completa", "Cap. 501_516", o sin episodio) se distinguen de los
+      // capítulos sueltos; "Serie completa"/rangos de temporadas van aparte.
+      function seriesInfo(title) {
+        var t = String(title || '');
+        if (/serie completa|complete series|todas las temporadas|temporadas?\\s*\\d+\\s*(?:a|al|-)\\s*\\d+|\\bS\\d{1,2}\\s*-\\s*S?\\d{1,2}\\b/i.test(t)) {
+          return { season: 'all', episode: null, pack: true };
         }
-        releasesEl.innerHTML = warningHtml() + list.map(function (r, i) {
+        var s = null, ep = null, m;
+        if ((m = t.match(/S(\\d{1,2})E(\\d{1,3})/i))) { s = +m[1]; ep = +m[2]; }
+        else if ((m = t.match(/(?:^|[^\\d])(\\d{1,2})x(\\d{1,3})(?!\\d)/i))) { s = +m[1]; ep = +m[2]; }
+        else if ((m = t.match(/cap[^0-9]{0,3}(\\d{1,2})(\\d{2})(?!\\d)/i))) { s = +m[1]; ep = +m[2]; }
+        if ((m = t.match(/temporada\\s*(\\d{1,2})/i))) s = s || +m[1];
+        if (!s && (m = t.match(/\\bS(\\d{1,2})\\b/i))) s = +m[1];
+        if (!s && (m = t.match(/season\\s*(\\d{1,2})/i))) s = +m[1];
+        var range = /cap[^0-9]{0,3}\\d{3,4}\\s*[_-]\\s*\\d{3,4}/i.test(t) || /complet[ao]|complete/i.test(t);
+        if (range) ep = null;
+        return { season: s ? String(s) : null, episode: ep, pack: !ep };
+      }
+
+      function releaseRow(r, i) {
           var idx = lastResults.indexOf(r);
           var isSel = selectedRelease === r;
           var other = otherYear(r);
@@ -2176,7 +2208,51 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
             '</div>' +
             '<span class="release-go">' + (isSel ? '✓ Elegida' : 'Elegir') + '</span>' +
           '</button>';
+      }
+
+      // Desplegable por temporada: primero los packs; los capítulos sueltos,
+      // plegados y por orden de episodio. Se abre el de la temporada elegida.
+      function seriesGroupsHtml(list) {
+        var groups = {};
+        list.forEach(function (r) {
+          var info = seriesInfo(r.title);
+          var key = info.season || 'none';
+          var g = groups[key] || (groups[key] = { packs: [], eps: [] });
+          (info.pack ? g.packs : g.eps).push({ r: r, ep: info.episode });
+        });
+        var keys = Object.keys(groups).sort(function (a, b) {
+          var rank = function (k) { return k === 'all' ? -1 : k === 'none' ? 1e6 : Number(k); };
+          return rank(a) - rank(b);
+        });
+        var wanted = document.getElementById('season-field').value;
+        var openKey = groups[wanted] ? wanted : keys[0];
+        var n = 0;
+        return keys.map(function (key) {
+          var g = groups[key];
+          if (!sortKey) g.eps.sort(function (a, b) { return (a.ep || 0) - (b.ep || 0); });
+          var label = key === 'all' ? 'Serie completa / varias temporadas' : key === 'none' ? 'Sin temporada clara' : 'Temporada ' + key;
+          var count = [g.packs.length ? g.packs.length + (g.packs.length === 1 ? ' pack' : ' packs') : '',
+            g.eps.length ? g.eps.length + (g.eps.length === 1 ? ' capítulo' : ' capítulos') : ''].filter(Boolean).join(' · ');
+          return '<details class="season-group" data-season="' + key + '"' + (key === openKey ? ' open' : '') + '>' +
+            '<summary><b>' + esc(label) + '</b><span>' + count + '</span></summary>' +
+            '<div class="season-group-body">' +
+              g.packs.map(function (x) { return releaseRow(x.r, n++); }).join('') +
+              (g.eps.length ? '<details class="ep-group"' + (g.packs.length ? '' : ' open') + '><summary>Capítulos sueltos (' + g.eps.length + ')</summary>' +
+                '<p class="ep-note">Cada temporada guarda una sola copia: un capítulo suelto solo servirá para ese episodio.</p>' +
+                g.eps.map(function (x) { return releaseRow(x.r, n++); }).join('') + '</details>' : '') +
+            '</div></details>';
         }).join('');
+      }
+
+      function renderReleases() {
+        var list = visibleResults();
+        if (!list.length) {
+          releasesEl.innerHTML = warningHtml() + '<div class="empty-box">Sin resultados.</div>';
+          return;
+        }
+        releasesEl.innerHTML = warningHtml() + (contentType() === 'series'
+          ? seriesGroupsHtml(list)
+          : list.map(releaseRow).join(''));
 
         releasesEl.querySelectorAll('.release').forEach(function (row) {
           row.addEventListener('click', function () { pickRelease(row, lastResults[Number(row.dataset.idx)]); });
@@ -2190,6 +2266,12 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         // Real-Debrid en vez de un magnet (más fiable en trackers
         // privados, donde a veces RD no consigue negociar metadatos).
         downloadRefField.value = r.downloadRef || '';
+        // En series, el selector de temporada pasa a la de esta copia.
+        if (contentType() === 'series') {
+          var info = seriesInfo(r.title);
+          var sel = document.getElementById('season-field');
+          if (info.season && sel.querySelector('option[value="' + info.season + '"]')) sel.value = info.season;
+        }
         markSelected(row);
         updateSummary();
       }
