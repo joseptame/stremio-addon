@@ -456,7 +456,7 @@ function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, 
           <div class="hero-meta">
             <span class="tag">${latest.type === "series" ? "Serie" : "Película"}</span>
           </div>
-          ${latest.rd.some((a) => a.state === "ok") ? `<div class="rd-mini">${latest.rd.filter((a) => a.state === "ok").map((a) => `<span class="acc">${a.pct === 100 ? `<span style="color:var(--ok)">${icon("check", 14)}</span>` : `<span style="color:var(--gold)">${icon("download", 14)}</span>`}<b>${escapeHtml(a.id)}</b> ${escapeHtml(a.label)}</span>`).join("")}</div>` : `<div class="rd-mini"><span class="acc">Aún no está en ninguna cuenta de Real-Debrid</span></div>`}
+          ${latest.rd.some((a) => a.state === "ok") ? `<div class="rd-mini" data-hero-rd="${escapeHtml(latest.id)}">${latest.rd.filter((a) => a.state === "ok").map((a) => `<span class="acc">${a.pct === 100 ? `<span style="color:var(--ok)">${icon("check", 14)}</span>` : `<span style="color:var(--gold)">${icon("download", 14)}</span>`}<b>${escapeHtml(a.id)}</b> ${escapeHtml(a.label)}</span>`).join("")}</div>` : `<div class="rd-mini"><span class="acc">Aún no está en ninguna cuenta de Real-Debrid</span></div>`}
           <div class="hero-actions">
             <button type="button" class="btn btn-primary" data-open="${escapeHtml(latest.id)}">${icon("eye", 18)} Ver ficha</button>
             <a class="btn btn-ghost" href="/admin/add?edit=${encodeURIComponent(latest.id)}">${icon("edit", 17)} Editar</a>
@@ -873,7 +873,20 @@ ${headTags("Biblioteca · JFuster RD")}
       }
 
       // Al cambiar de estado, la tarjeta se actualiza y pasa a su fila.
+      // La portada ("Recién añadida") muestra el estado de cada cuenta: se
+      // rehace con el progreso nuevo, igual que en el servidor.
+      function updateHero(it) {
+        var box = document.querySelector('[data-hero-rd="' + it.id + '"]');
+        if (!box) return;
+        box.innerHTML = it.rd.filter(function (a) { return a.state === 'ok'; }).map(function (a) {
+          var done = a.pct === 100;
+          return '<span class="acc"><span style="color:var(' + (done ? '--ok' : '--gold') + ')">' + (done ? ICON_CHECK : ICON_DOWNLOAD) + '</span>' +
+            '<b>' + esc(a.id) + '</b> ' + esc(a.label) + '</span>';
+        }).join('');
+      }
+
       function updateTape(it) {
+        updateHero(it);
         var tape = document.querySelector('.tape[data-open="' + it.id + '"]');
         if (!tape) return;
         var moved = tape.dataset.group !== it.group;

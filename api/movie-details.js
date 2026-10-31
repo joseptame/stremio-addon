@@ -2,13 +2,14 @@ const { getDetailsByImdb } = require("../lib/tmdb");
 const { RD_ACCOUNTS, getPlayableStream, accountStates, loadAccountMaps, loadAccountInfos, listTorrents, listEpisodes } = require("../lib/realdebrid");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { runWishlistCheck } = require("../lib/wishlist");
-const { isPushConfigured, saveSubscription, sendToAll } = require("../lib/push");
+const { isPushConfigured, saveSubscription, sendToAll, sendOnce } = require("../lib/push");
 const { IMDB_STREAMS } = require("../lib/data");
 const { entryCopies, seasonLabel } = require("../lib/series");
 
-// Ventana de la comprobación de descargas: algo más que su intervalo de 15
-// min, porque GitHub Actions a veces la lanza con unos minutos de retraso.
-const DOWNLOADS_WINDOW_MS = 20 * 60 * 1000;
+// Ventana de la comprobación de descargas: amplia (24 h) porque quien la
+// lanza puede retrasarse; los repetidos los evita sendOnce.
+const DOWNLOADS_WINDOW_MS = 24 * 60 * 60 * 1000;
+let lastDownloadsCheck = 0;
 
 // Películas del catálogo cuya descarga en alguna cuenta de RD terminó en
 // la ventana. Las que RD ya tenía en caché tienen una fecha de fin antigua
@@ -19,7 +20,11 @@ async function recentlyFinished(windowMs) {
     Object.values(IMDB_STREAMS).forEach((e) => {
         entryCopies(e).forEach((c) => {
             const name = e.name || e.title;
-            if (c.infoHash) byHash[c.infoHash.toLowerCase()] = c.key && c.key !== "all" ? `${name} (${seasonLabel(c.key)})` : name;
+            if (!c.infoHash) return;
+            byHash[c.infoHash.toLowerCase()] = {
+                name: c.key && c.key !== "all" ? `${name} (${seasonLabel(c.key)})` : name,
+                url: e.type === "series" ? "/admin?tab=series" : "/admin",
+            };
         });
     });
     const since = Date.now() - windowMs;
@@ -31,7 +36,7 @@ async function recentlyFinished(windowMs) {
             const hash = (t.hash || "").toLowerCase();
             const ended = Date.parse(t.ended || "");
             if (t.status === "downloaded" && byHash[hash] && ended >= since && ended > Date.parse(t.added || 0)) {
-                found.set(hash, { name: byHash[hash] });
+                found.set(hash, { hash, ...byHash[hash] });
             }
         }
     }
@@ -136,23 +141,21 @@ module.exports = async (req, res) => {
         }
     }
 
-    // Cada 15 min (GitHub Actions, ver .github/workflows/rd-downloads.yml):
-    // aviso de las descargas de RD terminadas en ese rato. Sin estado: se
-    // mira la fecha de fin que da RD.
+    // Aviso de las descargas de RD terminadas (en las últimas 24 h y de las
+    // que aún no se haya avisado: ver sendOnce). Lo lanzan la VM cada 5 min
+    // (crontab) y GitHub Actions cuando le toca, que no es fiable. Sin
+    // clave: solo consulta RD y nunca avisa dos veces de lo mismo; como
+    // mucho una pasada por minuto en cada instancia.
     if (req.method === "GET" && req.query && req.query.cron === "downloads") {
-        if (!isScheduledCall(req, /vercel-cron|filmrd-actions/i)) {
-            return res.status(401).json({ error: "Solo para la tarea programada." });
-        }
+        if (Date.now() - lastDownloadsCheck < 60 * 1000) return res.status(200).json({ skipped: true });
+        lastDownloadsCheck = Date.now();
         try {
             const finished = await recentlyFinished(DOWNLOADS_WINDOW_MS);
-            for (const f of finished) {
-                await sendToAll({
-                    title: "✅ Lista para ver",
-                    body: `«${f.name}» ya está descargada en Real-Debrid.`,
-                    url: "/admin",
-                }).catch(() => {});
-            }
-            return res.status(200).json({ finished: finished.map((f) => f.name) });
+            const result = await sendOnce(finished.map((f) => ({
+                key: `dl:${f.hash}`,
+                payload: { title: "✅ Lista para ver", body: `«${f.name}» ya está descargada en Real-Debrid.`, url: f.url },
+            })));
+            return res.status(200).json({ finished: finished.map((f) => f.name), notified: result.sent.length });
         } catch (err) {
             return res.status(500).json({ error: err.message });
         }
