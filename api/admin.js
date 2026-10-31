@@ -1,6 +1,6 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
-const { RD_ACCOUNTS, triggerRealDebridCache, accountStates, loadAccountMaps } = require("../lib/realdebrid");
+const { RD_ACCOUNTS, triggerRealDebridCache, accountStates, loadAccountMaps, deleteTorrentsByHash } = require("../lib/realdebrid");
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
@@ -1862,6 +1862,22 @@ function rdErrorText(code) {
     return `RD rechazó la copia (${code})`;
 }
 
+// Al quitar una copia del catálogo (borrar la película o cambiarle la
+// copia) se borra también de Real-Debrid, salvo que otra entrada del
+// catálogo siga usando ese mismo torrent. Devuelve el texto para el aviso.
+async function removeFromRdIfUnused(infoHash, catalog) {
+    const hash = String(infoHash || "").toLowerCase();
+    if (!hash) return "";
+    const stillUsed = Object.values(catalog).some((e) => String(e.infoHash || "").toLowerCase() === hash);
+    if (stillUsed) return "";
+    try {
+        const accounts = await deleteTorrentsByHash(hash);
+        return accounts.length ? ` Borrada también de Real-Debrid (${accounts.join(", ")}).` : "";
+    } catch {
+        return " No se pudo borrar de Real-Debrid.";
+    }
+}
+
 // Estado de RD de cada cuenta de RD_ACCOUNTS, para pintar el progreso en
 // el listado. Una sola llamada por cuenta (la lista completa de torrents),
 // no una por película — así da igual cuántas películas haya.
@@ -1937,13 +1953,15 @@ module.exports = async (req, res) => {
                 }));
             }
             const removedName = current[imdbId].name || current[imdbId].title || imdbId;
+            const removedHash = current[imdbId].infoHash;
             delete current[imdbId];
 
             await writeImdbStreamsToGitHub(ghHeaders, apiUrl, current, sha, `Eliminar stream de ${imdbId} vía panel admin`);
+            const rdNote = await removeFromRdIfUnused(removedHash, current);
 
             return res.status(200).send(renderListPage({
                 imdbStreams: current,
-                message: `<div class="msg ok">Eliminado "${escapeHtml(removedName)}" (${escapeHtml(imdbId)}). Vercel está redesplegando, ~1 min.</div>`,
+                message: `<div class="msg ok">Eliminado "${escapeHtml(removedName)}" (${escapeHtml(imdbId)}).${rdNote} Vercel está redesplegando, ~1 min.</div>`,
             }));
         } catch (err) {
             return res.status(500).send(renderListPage({
@@ -2072,6 +2090,10 @@ module.exports = async (req, res) => {
             sha,
             `${existing ? "Editar" : "Añadir"} stream para ${imdbId} vía panel admin`
         );
+        // Al cambiar de copia, la anterior se borra de RD si ya no la usa nadie.
+        const oldCopyNote = existing && existing.infoHash && existing.infoHash.toLowerCase() !== parsed.infoHash.toLowerCase()
+            ? (await removeFromRdIfUnused(existing.infoHash, current)).replace("Borrada también", "Copia anterior borrada")
+            : "";
 
         const posterNote = current[imdbId].poster
             ? " Póster y nombre obtenidos de Cinemeta."
@@ -2080,7 +2102,7 @@ module.exports = async (req, res) => {
         const commitNote = commitSha ? ` Commit <code>${escapeHtml(commitSha.slice(0, 7))}</code>.` : "";
         // Si RD rechazó la copia en alguna cuenta, el aviso sale como error:
         // la película se guarda, pero no se va a poder reproducir por RD.
-        const successMsg = `<div class="msg ${rdRejected ? "err" : "ok"}">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${commitNote}${posterNote}${rdNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
+        const successMsg = `<div class="msg ${rdRejected ? "err" : "ok"}">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${commitNote}${posterNote}${rdNote}${oldCopyNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
         // Se renderiza aquí mismo con "current" (recién escrito) en vez de
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
