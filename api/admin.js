@@ -1,6 +1,6 @@
 const { parseMagnet } = require("../lib/magnet");
 const { fetchCinemetaMeta } = require("../lib/cinemeta");
-const { RD_ACCOUNTS, triggerRealDebridCache, listTorrents, torrentsByHash } = require("../lib/realdebrid");
+const { RD_ACCOUNTS, triggerRealDebridCache, accountStates, loadAccountMaps } = require("../lib/realdebrid");
 const { fetchTorrentBytes } = require("../lib/prowlarr");
 const { IMDB_STREAMS } = require("../lib/data");
 const { isAuthenticated } = require("../lib/adminAuth");
@@ -104,6 +104,8 @@ function libraryStyles() {
   .sheet-section { margin-top: 28px; }
   .sheet-section h4 { margin: 0 0 12px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-mute); }
   .rd-list { display: grid; gap: 10px; }
+  .rd-notify { margin-top: 10px; min-height: 36px; font-size: 0.82rem; }
+  .rd-notify[hidden] { display: none; }
   .rd-item { display: grid; grid-template-columns: 90px 1fr auto; align-items: center; gap: 14px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 0.86rem; }
   .rd-item .name { font-weight: 600; }
   .rd-item .state { min-width: 64px; white-space: nowrap; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-dim); }
@@ -187,16 +189,6 @@ function libraryStyles() {
 }
 
 // ── Listado ────────────────────────────────────────────────────────
-// "downloaded" -> 100%/"listo"; el resto de estados de RD (magnet_conversion,
-// queued, downloading...) se muestran con el % si lo hay, o el estado tal
-// cual si no (mejor un texto crudo que nada, para poder depurar) con la
-// barra a 0.
-function formatRdEntry(entry) {
-    if (!entry) return null;
-    if (entry.status === "downloaded") return { pct: 100, label: "listo" };
-    if (typeof entry.progress === "number") return { pct: entry.progress, label: `${entry.progress}%` };
-    return { pct: 0, label: entry.status || "?" };
-}
 
 // Las portadas de Cinemeta (metahub) vienen en tamaño "small"; para la
 // cuadrícula y la ficha se pide la "medium", y el fondo se saca del mismo
@@ -216,14 +208,7 @@ function backdropFor(imdbId) {
 // "missing" si no la tiene y "nokey" si en este entorno no hay API key
 // de esa cuenta (p. ej. en local) y por tanto no se puede saber.
 function rdSummary(entry, rdMaps) {
-    const hashKey = (entry.infoHash || "").toLowerCase();
-    const all = RD_ACCOUNTS.map((acc) => {
-        if (!process.env[acc.envVar]) return { id: acc.id, state: "nokey", pct: 0, label: "Sin clave" };
-        const info = formatRdEntry(((rdMaps && rdMaps[acc.id]) || {})[hashKey]);
-        return info
-            ? { id: acc.id, state: "ok", pct: info.pct, label: info.label }
-            : { id: acc.id, state: "missing", pct: 0, label: "No añadida" };
-    });
+    const all = accountStates(entry.infoHash, rdMaps);
     const accounts = all.filter((a) => a.state === "ok");
     if (accounts.length === 0) return { all, accounts, status: "none", pct: 0 };
     const minPct = Math.min(...accounts.map((a) => a.pct));
@@ -411,6 +396,7 @@ ${headTags("Biblioteca · JFuster RD")}
         <div class="sheet-section">
           <h4>Real-Debrid</h4>
           <div class="rd-list" id="sheet-rd"></div>
+          <button type="button" class="btn btn-ghost rd-notify" id="sheet-notify" hidden>🔔 Avisarme cuando esté lista</button>
         </div>
         <div class="sheet-section">
           <h4>InfoHash</h4>
@@ -518,15 +504,7 @@ ${headTags("Biblioteca · JFuster RD")}
           '<span class="tag">' + (it.type === 'series' ? 'Serie' : 'Película') + '</span>' +
           '<span class="tag">' + esc(it.id) + '</span>' +
           '<span class="tag' + (it.hasTrackers ? ' accent' : '') + '">' + (it.hasTrackers ? 'Torrent con trackers' : 'Magnet sin trackers') + '</span>';
-        document.getElementById('sheet-rd').innerHTML = it.rd.map(function (a) {
-          var ready = a.state === 'ok' && a.pct === 100;
-          var title = a.state === 'nokey' ? ' title="No hay API key de esta cuenta en este entorno"' : '';
-          return '<div class="rd-item ' + a.state + '"' + title + '><span class="name">' + esc(a.id) + '</span>' +
-            '<div class="bar"><span class="' + (ready ? 'ready' : '') + '" style="width:' + a.pct + '%"></span></div>' +
-            '<span class="state' + (ready ? ' ready' : '') + '">' + (ready ? '✓ Listo' : esc(a.label)) + '</span></div>';
-        }).join('');
-        var ready = it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
-        document.getElementById('sheet-watch').style.display = ready ? '' : 'none';
+        renderRd(it);
         loadDetails(it);
         document.getElementById('sheet-hash').textContent = it.infoHash;
         document.getElementById('sheet-edit').href = '/admin/add?edit=' + encodeURIComponent(it.id);
@@ -536,7 +514,116 @@ ${headTags("Biblioteca · JFuster RD")}
         overlay.classList.add('open');
         document.body.style.overflow = 'hidden';
         document.getElementById('sheet-close').focus();
+        scheduleLive(0);
       }
+
+      function anyReady(it) {
+        return it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
+      }
+      function isDownloading(it) {
+        return it.rd.some(function (a) { return a.state === 'ok' && a.pct < 100; });
+      }
+
+      function renderRd(it) {
+        document.getElementById('sheet-rd').innerHTML = it.rd.map(function (a) {
+          var ready = a.state === 'ok' && a.pct === 100;
+          var title = a.state === 'nokey' ? ' title="No hay API key de esta cuenta en este entorno"' : '';
+          return '<div class="rd-item ' + a.state + '"' + title + '><span class="name">' + esc(a.id) + '</span>' +
+            '<div class="bar"><span class="' + (ready ? 'ready' : '') + '" style="width:' + a.pct + '%"></span></div>' +
+            '<span class="state' + (ready ? ' ready' : '') + '">' + (ready ? '✓ Listo' : esc(a.label)) + '</span></div>';
+        }).join('');
+        document.getElementById('sheet-watch').style.display = anyReady(it) ? '' : 'none';
+        notifyBtn.hidden = !(isDownloading(it) && window.Notification && Notification.permission === 'default');
+      }
+
+      // ── Progreso de RD en directo ──
+      // Mientras algo se está descargando se vuelve a preguntar a RD: cada
+      // 8 s con su ficha abierta, cada 30 s si no. Al terminar, aviso.
+      var ICON_CHECK = ${JSON.stringify(icon("check", 12))};
+      var ICON_DOWNLOAD = ${JSON.stringify(icon("download", 12))};
+      var liveTimer = null;
+      var notifyBtn = document.getElementById('sheet-notify');
+      notifyBtn.addEventListener('click', function () {
+        Notification.requestPermission().then(function () { if (current) renderRd(current); });
+      });
+
+      function summarize(it) {
+        var ok = it.rd.filter(function (a) { return a.state === 'ok'; });
+        if (!ok.length) return { status: 'none', pct: 0 };
+        var min = Math.min.apply(null, ok.map(function (a) { return a.pct; }));
+        return { status: min === 100 ? 'ready' : 'downloading', pct: min };
+      }
+
+      function updateTape(it) {
+        var tape = document.querySelector('.tape[data-open="' + it.id + '"]');
+        if (!tape) return;
+        tape.dataset.status = it.status;
+        var badge = tape.querySelector('.tape-badge');
+        if (badge) {
+          badge.className = 'tape-badge ' + it.status;
+          badge.innerHTML = it.status === 'ready' ? ICON_CHECK + ' En RD'
+            : it.status === 'downloading' ? ICON_DOWNLOAD + ' ' + it.pct + '%' : 'Sin RD';
+        }
+        var bar = tape.querySelector('.tape-progress span');
+        if (bar) bar.style.width = it.pct + '%';
+        if (bar && it.status !== 'downloading') bar.parentNode.remove();
+      }
+
+      function showToast(text) {
+        var t = document.createElement('div');
+        t.className = 'toast';
+        t.setAttribute('role', 'status');
+        t.innerHTML = '<div class="msg ok">' + esc(text) + '</div>';
+        document.body.appendChild(t);
+        function close() { t.classList.add('toast-out'); setTimeout(function () { t.remove(); }, 300); }
+        t.addEventListener('click', close);
+        setTimeout(close, 6000);
+      }
+
+      function notifyReady(it) {
+        var text = '«' + it.name + '» ya está lista en Real-Debrid.';
+        showToast(text);
+        if (window.Notification && Notification.permission === 'granted' && document.hidden) {
+          try { new Notification('Lista para ver', { body: text, icon: '/icon.png' }); } catch (e) {}
+        }
+      }
+
+      function scheduleLive(delay) {
+        clearTimeout(liveTimer);
+        var watching = items.filter(isDownloading);
+        if (!watching.length) return;
+        var sheetLive = overlay.classList.contains('open') && current && isDownloading(current);
+        liveTimer = setTimeout(pollLive, delay != null ? delay : (sheetLive ? 8000 : 30000));
+      }
+
+      function pollLive() {
+        if (document.hidden) { scheduleLive(); return; }
+        var watching = items.filter(isDownloading);
+        fetch('/api/movie-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'status', infoHashes: watching.map(function (it) { return it.infoHash; }) }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            watching.forEach(function (it) {
+              var rd = data.status && data.status[String(it.infoHash).toLowerCase()];
+              if (!rd) return;
+              var wasReady = anyReady(it);
+              it.rd = rd;
+              var s = summarize(it);
+              it.status = s.status;
+              it.pct = s.pct;
+              updateTape(it);
+              if (current === it) renderRd(it);
+              if (!wasReady && anyReady(it)) notifyReady(it);
+            });
+          })
+          .catch(function () {})
+          .then(function () { scheduleLive(); });
+      }
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) scheduleLive(0); });
+      scheduleLive();
 
       // ── Sinopsis, datos y tráiler (TMDB), cargados al abrir la ficha ──
       var detailsCache = {};
@@ -1612,7 +1699,19 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         updateSummary();
       }
 
+      // Pulsar otra vez la copia elegida la deselecciona (al editar, vuelve
+      // a quedar la copia que ya tenía guardada).
+      var savedMagnet = magnetInput.value;
+      function unpickRelease() {
+        selectedRelease = null;
+        magnetInput.value = editing ? savedMagnet : '';
+        downloadRefField.value = '';
+        markSelected(null);
+        updateSummary();
+      }
+
       function pickRelease(row, r) {
+        if (selectedRelease === r) { unpickRelease(); return; }
         if (r.magnet) { applyRelease(row, r, r.magnet); return; }
         // Sin magnet directo: hay que descargar el .torrent y calcular
         // el hash, solo para este resultado (no se hizo al buscar).
@@ -1767,12 +1866,7 @@ function rdErrorText(code) {
 // el listado. Una sola llamada por cuenta (la lista completa de torrents),
 // no una por película — así da igual cuántas películas haya.
 async function fetchRdMaps() {
-    const torrentsByAccount = await Promise.all(
-        RD_ACCOUNTS.map((acc) => listTorrents(process.env[acc.envVar]))
-    );
-    const maps = {};
-    RD_ACCOUNTS.forEach((acc, i) => { maps[acc.id] = torrentsByHash(torrentsByAccount[i]); });
-    return maps;
+    return loadAccountMaps();
 }
 
 module.exports = async (req, res) => {
