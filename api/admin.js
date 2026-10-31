@@ -450,14 +450,8 @@ ${headTags("Biblioteca · JFuster RD")}
       var noResults = document.getElementById('no-results');
       var countEl = document.getElementById('movie-count');
       var chips = document.querySelectorAll('[data-filter]');
-      var navSearch = document.getElementById('nav-search');
       var filter = 'all';
 
-      if (navSearch) navSearch.addEventListener('click', function () {
-        if (!searchInput) return;
-        document.getElementById('buscar').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        setTimeout(function () { searchInput.focus(); }, 300);
-      });
       if (!tapes.length) return;
 
       function matches(t) {
