@@ -98,6 +98,11 @@ function libraryStyles() {
   .season-item .bad { color: var(--err); font-weight: 600; }
   .season-item a { color: var(--text-dim); font-size: 0.8rem; text-decoration: underline; }
   .season-item .muted { color: var(--text-mute); font-size: 0.8rem; }
+  .season-actions { display: inline-flex; align-items: center; gap: 12px; }
+  .link-btn { padding: 0; border: 0; background: none; color: var(--text-dim); font: inherit; font-size: 0.8rem; text-decoration: underline; cursor: pointer; }
+  .play-ep { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 0.72rem; cursor: pointer; }
+  .pack-eps { display: grid; gap: 6px; }
+  .pack-eps[hidden] { display: none; }
   .season-block { display: grid; gap: 6px; }
   .season-item.episode { margin-left: 18px; padding: 8px 14px; font-size: 0.82rem; background: transparent; }
   .season-add-ep { margin-left: 18px; font-size: 0.78rem; color: var(--text-dim); text-decoration: underline; }
@@ -391,7 +396,7 @@ function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, 
         const seasons = isSeries
             ? entryCopies(s).map((c) => {
                 const cs = rdSummary(c, rdMaps);
-                return { key: c.key, label: seasonLabel(c.key), group: cs.group, pct: cs.pct };
+                return { key: c.key, label: seasonLabel(c.key), group: cs.group, pct: cs.pct, infoHash: c.infoHash };
             })
             : [];
         const group = !isSeries || !seasons.length ? summary.group
@@ -752,14 +757,21 @@ ${headTags("Biblioteca · JFuster RD")}
         document.getElementById('season-list').innerHTML = order.length ? order.map(function (season) {
           var g = bySeason[season];
           var title = season === 'all' ? 'Serie completa' : 'Temporada ' + season;
+          // Pack listo: "Capítulos" despliega los episodios que trae (leídos
+          // de RD), cada uno con ▶. Capítulo suelto listo: ▶ directo.
           var head = '<div class="season-item"><b>' + esc(title) + '</b>' +
-            (g.pack ? state(g.pack) + '<a href="' + edit + encodeURIComponent(g.pack.key) + '">Cambiar</a>'
-              : '<span class="muted">Sin pack</span><span></span>') + '</div>';
+            (g.pack ? state(g.pack) + '<span class="season-actions">' +
+                (g.pack.group === 'ready' ? '<button type="button" class="link-btn" data-eps="' + esc(g.pack.infoHash) + '" data-season="' + esc(season) + '">Capítulos</button>' : '') +
+                '<a href="' + edit + encodeURIComponent(g.pack.key) + '">Cambiar</a></span>'
+              : '<span class="muted">Sin pack</span><span></span>') + '</div>' +
+            (g.pack ? '<div class="pack-eps" data-pack="' + esc(g.pack.infoHash) + '" hidden></div>' : '');
           if (season === 'all') return head;
           var eps = g.eps.map(function (s) {
             var ep = String(s.key).split(':')[1];
             return '<div class="season-item episode"><b>Capítulo ' + esc(ep) + '</b>' + state(s) +
-              '<a href="' + edit + encodeURIComponent(season) + '&episode=' + encodeURIComponent(ep) + '">Cambiar</a></div>';
+              '<span class="season-actions">' +
+                (s.group === 'ready' ? '<button type="button" class="play-ep" data-hash="' + esc(s.infoHash) + '" data-any="1" aria-label="Ver el capítulo ' + esc(ep) + '">▶</button>' : '') +
+                '<a href="' + edit + encodeURIComponent(season) + '&episode=' + encodeURIComponent(ep) + '">Cambiar</a></span></div>';
           }).join('');
           var addEp = '<a class="season-add-ep" href="' + edit + encodeURIComponent(season) + '&episode=">+ Añadir capítulo a la temporada ' + esc(season) + '</a>';
           return '<div class="season-block">' + head + eps + addEp + '</div>';
@@ -767,6 +779,42 @@ ${headTags("Biblioteca · JFuster RD")}
         var numbers = order.map(Number).filter(function (n) { return n > 0; });
         document.getElementById('season-add').href = edit + (numbers.length ? Math.max.apply(null, numbers) + 1 : 1);
       }
+
+      // Botones de la lista de temporadas: ▶ reproduce un episodio en el
+      // panel; "Capítulos" pide a RD los episodios de un pack y los lista.
+      document.getElementById('season-list').addEventListener('click', function (e) {
+        var play = e.target.closest('.play-ep');
+        if (play) {
+          playMovie({ infoHash: play.dataset.hash, anyFile: play.dataset.any === '1',
+            season: play.dataset.season, episode: play.dataset.ep });
+          return;
+        }
+        var btn = e.target.closest('[data-eps]');
+        if (!btn) return;
+        var box = document.querySelector('.pack-eps[data-pack="' + btn.dataset.eps + '"]');
+        if (!box.hidden) { box.hidden = true; return; }
+        box.hidden = false;
+        if (box.dataset.loaded) return;
+        box.innerHTML = '<span class="spinner"></span>';
+        fetch('/api/movie-details', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'episodes', infoHash: btn.dataset.eps }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.error) { box.textContent = data.error; return; }
+            box.dataset.loaded = '1';
+            var eps = data.episodes || [];
+            box.innerHTML = eps.length ? eps.map(function (x) {
+              var season = x.season || btn.dataset.season;
+              return '<div class="season-item episode"><b>' + (x.season ? 'T' + x.season + ' · ' : '') + 'Capítulo ' + x.episode + '</b>' +
+                '<span></span><span class="season-actions"><button type="button" class="play-ep" data-hash="' + esc(btn.dataset.eps) +
+                '" data-season="' + esc(season === 'all' ? '' : season) + '" data-ep="' + x.episode + '" aria-label="Ver el capítulo ' + x.episode + '">▶</button></span></div>';
+            }).join('') : '<p class="season-empty">No se reconocen los capítulos por el nombre de los ficheros.</p>';
+          })
+          .catch(function () { box.textContent = 'No se pudo consultar Real-Debrid.'; });
+      });
 
       function anyReady(it) {
         return it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
@@ -1252,16 +1300,20 @@ ${headTags("Biblioteca · JFuster RD")}
         };
       }
 
-      function playMovie() {
+      // "ep" (series): { infoHash, season, episode } para un episodio de un
+      // pack o { infoHash, anyFile: true } para un capítulo suelto.
+      function playMovie(ep) {
         var it = current;
         if (!it) return;
         stopTrailer();
-        showPlayerMessage('<span class="spinner"></span> Preparando la película en Real-Debrid…');
+        showPlayerMessage('<span class="spinner"></span> Preparando ' + (ep ? 'el episodio' : 'la película') + ' en Real-Debrid…');
         sheetEl.scrollTop = 0;
         fetch('/api/movie-details', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'play', infoHash: it.infoHash }),
+          body: JSON.stringify(ep
+            ? { action: 'play', infoHash: ep.infoHash, season: ep.season, episode: ep.episode, anyFile: ep.anyFile }
+            : { action: 'play', infoHash: it.infoHash }),
         })
           .then(function (res) { return res.json(); })
           .then(function (data) {
@@ -1297,7 +1349,7 @@ ${headTags("Biblioteca · JFuster RD")}
 
       playBtn.addEventListener('click', playTrailer);
       trailerBtn.addEventListener('click', playTrailer);
-      watchBtn.addEventListener('click', playMovie);
+      watchBtn.addEventListener('click', function () { playMovie(); });
 
       function close() {
         stopTrailer();

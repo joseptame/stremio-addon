@@ -1,5 +1,5 @@
 const { getDetailsByImdb } = require("../lib/tmdb");
-const { RD_ACCOUNTS, getPlayableStream, accountStates, loadAccountMaps, loadAccountInfos, listTorrents } = require("../lib/realdebrid");
+const { RD_ACCOUNTS, getPlayableStream, accountStates, loadAccountMaps, loadAccountInfos, listTorrents, listEpisodes } = require("../lib/realdebrid");
 const { isAuthenticated } = require("../lib/adminAuth");
 const { runWishlistCheck } = require("../lib/wishlist");
 const { isPushConfigured, saveSubscription, sendToAll } = require("../lib/push");
@@ -46,14 +46,16 @@ async function recentlyFinished(windowMs) {
 // - { action: "status", infoHashes }: progreso en RD, para la ficha y la
 //   biblioteca mientras algo se está descargando.
 // Y por GET, la lista HLS recortada para el reproductor (trimmedPlaylist).
-async function playStream(res, infoHash) {
+// "episode" (series): { season, episode } para un episodio de un pack, o
+// { anyFile: true } para un capítulo suelto (su único vídeo).
+async function playStream(res, infoHash, episode) {
     if (!infoHash || !/^[0-9a-fA-F]{40}$/.test(String(infoHash))) {
         return res.status(400).json({ error: "infoHash inválido." });
     }
     for (const acc of RD_ACCOUNTS) {
         const key = process.env[acc.envVar];
         if (!key) continue;
-        const stream = await getPlayableStream(key, infoHash);
+        const stream = await getPlayableStream(key, infoHash, episode);
         if (stream && (stream.hls || stream.download)) {
             return res.status(200).json({ account: acc.id, ...stream });
         }
@@ -177,7 +179,24 @@ module.exports = async (req, res) => {
     const { imdbId, type, action, infoHash, infoHashes } = req.body || {};
 
     try {
-        if (action === "play") return await playStream(res, infoHash);
+        if (action === "play") {
+            const b = req.body || {};
+            const episode = b.anyFile ? { anyFile: true }
+                : /^\d+$/.test(String(b.episode || "")) ? { season: b.season, episode: b.episode, singleSeason: !!b.season } : null;
+            return await playStream(res, infoHash, episode);
+        }
+
+        // Episodios que trae un pack de serie (para verlos desde la ficha).
+        if (action === "episodes") {
+            if (!/^[0-9a-fA-F]{40}$/.test(String(infoHash || ""))) return res.status(400).json({ error: "infoHash inválido." });
+            for (const acc of RD_ACCOUNTS) {
+                const key = process.env[acc.envVar];
+                if (!key) continue;
+                const episodes = await listEpisodes(key, infoHash);
+                if (episodes) return res.status(200).json({ episodes });
+            }
+            return res.status(404).json({ error: "Ninguna cuenta de Real-Debrid tiene este pack listo todavía." });
+        }
 
         // Notificaciones: guardar este dispositivo / mandar una de prueba.
         if (action === "push-subscribe") {
