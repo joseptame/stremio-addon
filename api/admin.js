@@ -1974,10 +1974,21 @@ async function removeFromRdIfUnused(infoHash, catalog) {
     if (stillUsed) return "";
     try {
         const accounts = await deleteTorrentsByHash(hash);
-        return accounts.length ? ` Borrada también de Real-Debrid (${accounts.join(", ")}).` : "";
+        return accounts.length ? " También de Real-Debrid." : "";
     } catch {
         return " No se pudo borrar de Real-Debrid.";
     }
+}
+
+// Resumen corto de lo que dijo RD al dar de alta la copia en cada cuenta:
+// "Lista en Jfuster · Descargando en Ivan, Manolo · Manolo: <error>".
+function summarizeRd(results) {
+    const names = (kind) => results.filter((r) => r.kind === kind).map((r) => r.id);
+    const parts = [];
+    if (names("ready").length) parts.push(`Lista en RD (${names("ready").join(", ")})`);
+    if (names("downloading").length) parts.push(`Descargando en RD (${names("downloading").join(", ")})`);
+    results.filter((r) => r.kind === "error").forEach((r) => parts.push(`${r.id}: ${r.text}`));
+    return parts.length ? " " + escapeHtml(parts.join(" · ")) + "." : "";
 }
 
 // Estado de RD de cada cuenta de RD_ACCOUNTS, para pintar el progreso en
@@ -2063,7 +2074,7 @@ module.exports = async (req, res) => {
 
             return res.status(200).send(renderListPage({
                 imdbStreams: current,
-                message: `<div class="msg ok">Eliminado "${escapeHtml(removedName)}" (${escapeHtml(imdbId)}).${rdNote} Vercel está redesplegando, ~1 min.</div>`,
+                message: `<div class="msg ok"><b>«${escapeHtml(removedName)}» eliminada.</b>${rdNote}</div>`,
             }));
         } catch (err) {
             return res.status(500).send(renderListPage({
@@ -2134,6 +2145,7 @@ module.exports = async (req, res) => {
         let rdNote = "";
         let rdRejected = false;
         let rdBlocked = false;
+        let sentAs = "magnet";
         if (rdAccounts.length > 0) {
             // Si el magnet viene de un resultado de Prowlarr, se vuelve a
             // descargar el .torrent real y se sube tal cual a RD en vez de
@@ -2149,28 +2161,26 @@ module.exports = async (req, res) => {
                     // Si falla, se sigue con el magnet como respaldo.
                 }
             }
+            if (torrentBuffer) sentAs = ".torrent";
 
-            const method = torrentBuffer ? ".torrent" : "magnet";
             const results = await Promise.all(rdAccounts.map(async (acc) => {
-                if (!acc.key) return `${acc.label}: falta configurar su clave en el servidor`;
+                if (!acc.key) return { id: acc.label, kind: "error", text: "falta su clave en el servidor" };
                 const rdResult = await triggerRealDebridCache(acc.key, parsed.infoHash, parsed.sources, torrentBuffer);
-                if (!rdResult) return `${acc.label}: no se pudo contactar con RD`;
+                if (!rdResult) return { id: acc.label, kind: "error", text: "no se pudo contactar con RD" };
                 if (rdResult.error) {
                     rdRejected = true;
                     if (rdResult.error === "infringing_file") rdBlocked = true;
-                    return `${acc.label}: ${rdErrorText(rdResult.error)}`;
+                    return { id: acc.label, kind: "error", text: rdErrorText(rdResult.error) };
                 }
-                return rdResult.cached
-                    ? `${acc.label}: ya cacheado, listo al instante`
-                    : `${acc.label}: pedido a RD, puede tardar según seeders`;
+                return { id: acc.label, kind: rdResult.cached ? "ready" : "downloading" };
             }));
-            rdNote = ` Real-Debrid (subido como ${method}) — ` + results.join(" · ") + ".";
+            rdNote = summarizeRd(results);
         }
 
         // El bloqueo es por hash (igual para todas las cuentas): no se guarda.
         if (rdBlocked) {
             values.magnet = "";
-            return addPageError(409, `<div class="msg err">No se ha guardado: Real-Debrid tiene bloqueada esta copia por derechos de autor (enviada como ${method}). Elige otra copia de la lista.</div>`);
+            return addPageError(409, `<div class="msg err">No se ha guardado: Real-Debrid tiene bloqueada esta copia por derechos de autor (enviada como ${sentAs}). Elige otra copia de la lista.</div>`);
         }
 
         const needsMeta = !existing || !existing.poster || !existing.name;
@@ -2185,7 +2195,7 @@ module.exports = async (req, res) => {
             type: contentType,
         };
 
-        const commitSha = await writeImdbStreamsToGitHub(
+        await writeImdbStreamsToGitHub(
             ghHeaders,
             apiUrl,
             current,
@@ -2194,17 +2204,12 @@ module.exports = async (req, res) => {
         );
         // Al cambiar de copia, la anterior se borra de RD si ya no la usa nadie.
         const oldCopyNote = existing && existing.infoHash && existing.infoHash.toLowerCase() !== parsed.infoHash.toLowerCase()
-            ? (await removeFromRdIfUnused(existing.infoHash, current)).replace("Borrada también", "Copia anterior borrada")
+            ? ((await removeFromRdIfUnused(existing.infoHash, current)) ? " Copia anterior borrada de RD." : "")
             : "";
 
-        const posterNote = current[imdbId].poster
-            ? " Póster y nombre obtenidos de Cinemeta."
-            : " No se encontró póster en Cinemeta (se guardó igualmente, aparecerá sin imagen en el catálogo).";
-
-        const commitNote = commitSha ? ` Commit <code>${escapeHtml(commitSha.slice(0, 7))}</code>.` : "";
         // Si RD rechazó la copia en alguna cuenta, el aviso sale como error:
         // la película se guarda, pero no se va a poder reproducir por RD.
-        const successMsg = `<div class="msg ${rdRejected ? "err" : "ok"}">Guardado. ${escapeHtml(imdbId)} → infoHash ${escapeHtml(parsed.infoHash)}.${commitNote}${posterNote}${rdNote}${oldCopyNote} Vercel está redesplegando, estará online en ~1 min.</div>`;
+        const successMsg = `<div class="msg ${rdRejected ? "err" : "ok"}"><b>«${escapeHtml(current[imdbId].name || title.trim())}» guardada.</b>${rdNote}${oldCopyNote} En Stremio en ~1 min.</div>`;
         // Se renderiza aquí mismo con "current" (recién escrito) en vez de
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
