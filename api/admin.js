@@ -165,6 +165,9 @@ function libraryStyles() {
   .hash-row code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 0.8rem ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); }
   .sheet-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 30px; }
   .sheet-actions .grow { flex: 1; }
+  .stremio-hint { margin: 12px 0 0; font-size: 0.82rem; line-height: 1.5; color: var(--gold); }
+  .stremio-hint[hidden] { display: none; }
+  .stremio-hint a { color: inherit; text-decoration: underline; }
   .confirm { display: none; margin-top: 18px; padding: 18px; border-radius: var(--radius); background: var(--err-soft); border: 1px solid rgba(255,107,129,0.3); }
   .confirm.open { display: block; animation: fade-up 0.2s ease both; }
   .confirm p { margin: 0 0 14px; color: #ffc0ca; font-size: 0.9rem; }
@@ -443,12 +446,14 @@ ${headTags("Biblioteca · JFuster RD")}
           </dl>
         </details>
         <div class="sheet-actions">
-          <button type="button" class="btn btn-primary" id="sheet-watch" style="display:none">${icon("play", 17)} Ver ahora</button>
+          <a class="btn btn-primary" id="sheet-stremio" href="#">${icon("tv", 17)} Ver en Stremio</a>
+          <button type="button" class="btn btn-ghost" id="sheet-watch" style="display:none">${icon("play", 17)} Ver aquí</button>
           <button type="button" class="btn btn-ghost" id="sheet-trailer" style="display:none">${icon("film", 17)} Tráiler</button>
           <a class="btn btn-ghost grow" id="sheet-edit" href="#">${icon("edit", 17)} Editar copia</a>
           <a class="btn btn-ghost" id="sheet-imdb" href="#" target="_blank" rel="noopener">IMDb</a>
           <button type="button" class="btn btn-danger" id="sheet-delete">${icon("trash", 17)} Eliminar</button>
         </div>
+        <p class="stremio-hint" id="stremio-hint" hidden>¿No se ha abierto? Necesitas la app de Stremio con este addon instalado (<a href="https://www.stremio.com/downloads" target="_blank" rel="noopener">descargar Stremio</a>), o <a href="#" target="_blank" rel="noopener">ábrela en Stremio Web</a>.</p>
         <div class="confirm" id="sheet-confirm">
           <p id="sheet-confirm-text"></p>
           <div class="row">
@@ -559,6 +564,10 @@ ${headTags("Biblioteca · JFuster RD")}
         document.getElementById('sheet-hash').textContent = it.infoHash;
         document.getElementById('sheet-edit').href = '/admin/add?edit=' + encodeURIComponent(it.id);
         document.getElementById('sheet-imdb').href = 'https://www.imdb.com/title/' + encodeURIComponent(it.id) + '/';
+        var stremioPath = (it.type === 'series' ? 'series' : 'movie') + '/' + encodeURIComponent(it.id);
+        document.getElementById('sheet-stremio').href = 'stremio:///detail/' + stremioPath + (it.type === 'series' ? '' : '/' + encodeURIComponent(it.id));
+        stremioHint.hidden = true;
+        stremioHint.querySelector('a').href = 'https://web.stremio.com/#/detail/' + stremioPath;
         confirmBox.classList.remove('open');
         stopTrailer();
         overlay.classList.add('open');
@@ -566,6 +575,20 @@ ${headTags("Biblioteca · JFuster RD")}
         document.getElementById('sheet-close').focus();
         scheduleLive(0);
       }
+
+      // "Ver en Stremio": si la app no está instalada el enlace stremio://
+      // no hace nada (o Safari avisa) y la página sigue a la vista: tras
+      // 2,5 s se ofrece descargarla o abrirla en Stremio Web.
+      var stremioHint = document.getElementById('stremio-hint');
+      document.getElementById('sheet-stremio').addEventListener('click', function () {
+        var left = false;
+        function onHide() { if (document.hidden) left = true; }
+        document.addEventListener('visibilitychange', onHide);
+        setTimeout(function () {
+          document.removeEventListener('visibilitychange', onHide);
+          if (!left) stremioHint.hidden = false;
+        }, 2500);
+      });
 
       function anyReady(it) {
         return it.rd.some(function (a) { return a.state === 'ok' && a.pct === 100; });
