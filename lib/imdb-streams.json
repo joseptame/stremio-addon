@@ -18,5 +18,53 @@
     "name": "The Rite",
     "poster": "https://images.metahub.space/poster/small/tt1161864/img",
     "type": "movie"
+  },
+  "tt27497393": {
+    "infoHash": "6ed933bbf3d72378188f4f9b52eb656d48984872",
+    "sources": [],
+    "title": "Stuart no consigue salvar el universo",
+    "name": "Stuart Fails to Save the Universe",
+    "poster": "https://images.metahub.space/poster/small/tt27497393/img",
+    "type": "series"
+  },
+  "tt1446714": {
+    "infoHash": "a9c83e44f771f7171b1c9884e8454411b0489192",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Prometheus",
+    "name": "Prometheus",
+    "poster": "https://images.metahub.space/poster/small/tt1446714/img",
+    "type": "movie"
+  },
+  "tt1060277": {
+    "infoHash": "3d52f2317e19fbb9d0062efe7148f9b0b72d7bbd",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Monstruoso",
+    "name": "Cloverfield",
+    "poster": "https://images.metahub.space/poster/small/tt1060277/img",
+    "type": "movie"
+  },
+  "tt0320691": {
+    "infoHash": "bbd184f17ac7b2f23d994b38c47b572b7c4abaa0",
+    "sources": [
+      "tracker:https://nobs.rawsmoke.net/announce/b483215c4b23a01cc6ee56124afdc2f7"
+    ],
+    "title": "Underworld",
+    "name": "Underworld",
+    "poster": "https://images.metahub.space/poster/small/tt0320691/img",
+    "type": "movie"
+  },
+  "tt0338526": {
+    "infoHash": "06f5dee590287bd2c2e9d9f692b7ae8f8d05222b",
+    "sources": [
+      "tracker:https://tracker.milnueve.cc/announce/9b6e17369ee868ce339ba67085f4a473"
+    ],
+    "title": "Van Helsing",
+    "name": "Van Helsing",
+    "poster": "https://images.metahub.space/poster/small/tt0338526/img",
+    "type": "movie"
   }
 }

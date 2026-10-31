@@ -1138,7 +1138,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       <section class="step" id="step-film">
         <div class="step-head">
           <span class="step-num${editing ? " done" : ""}" id="step1-num">1</span>
-          <h2 class="step-title">${isSeries ? "La serie" : "La película"}</h2>
+          <h2 class="step-title">${isSeries ? "Serie" : "Película"}</h2>
           ${editing ? "" : `<div class="segmented" role="tablist" aria-label="Tipo de contenido">
             <button type="button" data-type="movie" class="${isSeries ? "" : "active"}">${icon("film", 16)} Película</button>
             <button type="button" data-type="series" class="${isSeries ? "active" : ""}">${icon("tv", 16)} Serie</button>
@@ -1176,7 +1176,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
       <section class="step" id="step-copy">
         <div class="step-head">
           <span class="step-num" id="step2-num">2</span>
-          <h2 class="step-title">La copia</h2>
+          <h2 class="step-title">Enlace</h2>
           <div class="segmented" role="tablist" aria-label="Origen de la copia">
             <button type="button" data-mode="prowlarr" class="${v.prowlarrMode ? "active" : ""}">${icon("search", 16)} <span><span class="seg-extra">Buscar en </span>${process.env.JACKETT_URL ? "Jackett" : "Prowlarr"}</span></button>
             <button type="button" data-mode="manual" class="${v.prowlarrMode ? "" : "active"}">${icon("magnet", 16)} <span><span class="seg-extra">Pegar </span>magnet</span></button>
@@ -1324,7 +1324,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
           document.querySelectorAll('[data-type]').forEach(function (b) { b.classList.toggle('active', b === btn); });
           typeField.value = btn.dataset.type;
           var isSeries = btn.dataset.type === 'series';
-          document.querySelector('#step-film .step-title').textContent = isSeries ? 'La serie' : 'La película';
+          document.querySelector('#step-film .step-title').textContent = isSeries ? 'Serie' : 'Película';
           searchInput.placeholder = isSeries ? 'Busca una serie...' : 'Busca una película...';
           clearFilm();
           if (searchInput.value.trim().length >= 2) searchTmdb();
