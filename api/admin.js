@@ -109,7 +109,9 @@ function libraryStyles() {
   .season-empty { margin: 0 0 12px; font-size: 0.84rem; color: var(--text-mute); }
   .season-add { min-height: 36px; font-size: 0.82rem; }
   .account-alert { margin-top: 18px; }
-  .wish-row { margin: 26px 0 34px; scroll-margin-top: 90px; }
+  .wish-page { margin-top: 26px; }
+  .wish-hint { margin: -8px 0 20px; }
+  a.toast { display: block; text-decoration: none; }
   .tape.wish { text-decoration: none; color: inherit; }
   .wish-year { color: var(--text-mute); font-weight: 400; }
   .shelf-row { margin-top: 26px; }
@@ -294,35 +296,50 @@ const LIBRARY_ROWS = [
 // película ya elegida y la búsqueda hecha. Cuando una pasa a tener copias
 // buenas, un aviso al abrir la biblioteca (una vez por cambio, recordado
 // en el navegador).
-function renderWishlist(wishlist) {
-    const wishes = Object.values(wishlist || {}).sort((a, b) => Date.parse(b.addedAt || 0) - Date.parse(a.addedAt || 0));
-    if (!wishes.length) return "";
-    const card = (w) => {
-        const poster = w.poster || `https://images.metahub.space/poster/medium/${encodeURIComponent(w.imdbId)}/img`;
-        const sub = w.best
-            ? `Mejor: ${w.best.quality} · ${w.best.seeders} seeders`
-            : "Aún sin copias buenas";
-        return `<a class="tape wish" href="/admin/add?wish=${encodeURIComponent(w.imdbId)}" aria-label="${escapeHtml(w.name)}">
+function wishCard(w) {
+    const poster = w.poster || `https://images.metahub.space/poster/medium/${encodeURIComponent(w.imdbId)}/img`;
+    const sub = w.best
+        ? `Mejor: ${w.best.quality} · ${w.best.seeders} seeders`
+        : "Aún sin copias buenas";
+    return `<a class="tape wish" href="/admin/add?wish=${encodeURIComponent(w.imdbId)}" aria-label="${escapeHtml(w.name)}">
             <div class="tape-poster">
               <img src="${escapeHtml(poster)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tape-placeholder" style="display:none">${icon("film", 30)}${escapeHtml(w.name)}</div>
               ${w.count
                 ? `<span class="tape-badge ready">${icon("check", 12)} ${w.count} copia${w.count === 1 ? "" : "s"}</span>`
                 : `<span class="tape-badge downloading">Buscando…</span>`}
+              ${w.type === "series" ? `<span class="tag accent tape-type">Serie</span>` : ""}
             </div>
             <div class="tape-title">${escapeHtml(w.name)}${w.year ? ` <span class="wish-year">(${escapeHtml(w.year)})</span>` : ""}</div>
             <div class="tape-sub">${escapeHtml(sub)}</div>
           </a>`;
-    };
-    const found = wishes.filter((w) => w.count).map((w) => ({ id: w.imdbId, name: w.name, count: w.count }));
-    return `<section class="wish-row" id="deseos" aria-label="Lista de deseos">
-      <div class="row-head">
-        <h3 class="row-title">Lista de deseos <span class="count">${wishes.length}</span></h3>
-        <p class="row-hint">Las busco cada día; tócala para ver las copias.</p>
+}
+
+// Sección "Deseos": todas las apuntadas, de la última a la primera.
+function renderWishlist(wishlist) {
+    const wishes = Object.values(wishlist || {}).sort((a, b) => Date.parse(b.addedAt || 0) - Date.parse(a.addedAt || 0));
+    return `<section class="wish-page" aria-label="Lista de deseos">
+      <div class="shelf-head">
+        <h2 class="shelf-title">Lista de deseos <span class="count">${wishes.length}</span></h2>
       </div>
-      <div class="grid">${wishes.map(card).join("")}</div>
-      <script>
+      ${wishes.length
+        ? `<p class="row-hint wish-hint">Las busco cada día y te aviso cuando aparece una copia buena en castellano. Tócala para ver las copias.</p>
+      <div class="grid">${wishes.map(wishCard).join("")}</div>`
+        : `<div class="empty-state">
+            ${icon("star", 44)}
+            <div class="big">Tu lista de deseos está vacía</div>
+            <p>Cuando una película o serie aún no tenga una buena copia, búscala en Añadir y pulsa «Añadir a la lista de deseos»: la buscaré cada día.</p>
+          </div>`}
+    </section>`;
+}
+
+// Aviso al abrir cualquier sección cuando alguna de la lista de deseos
+// pasa a tener copias buenas (una vez por cambio, recordado en el navegador).
+function wishlistNewsToast(wishlist) {
+    const found = Object.values(wishlist || {}).filter((w) => w.count).map((w) => ({ id: w.imdbId, name: w.name, count: w.count }));
+    if (!found.length) return "";
+    return `<script>
         (function () {
-          var found = ${JSON.stringify(found).replace(/</g, "\\u003c")};
+          var found = ${JSON.stringify(found).replace(/</g, "\u003c")};
           var news = found.filter(function (w) {
             try {
               var key = 'wish-seen:' + w.id;
@@ -332,21 +349,19 @@ function renderWishlist(wishlist) {
             } catch (e) { return false; }
           });
           if (!news.length) return;
-          var t = document.createElement('div');
+          var t = document.createElement('a');
           t.className = 'toast';
+          t.href = '/admin?tab=wishlist';
           t.setAttribute('role', 'status');
           var text = news.length === 1
             ? 'Hay copias nuevas para «' + news[0].name + '» en tu lista de deseos.'
-            : 'Hay copias nuevas para ' + news.length + ' películas de tu lista de deseos.';
+            : 'Hay copias nuevas para ' + news.length + ' títulos de tu lista de deseos.';
           t.innerHTML = '<div class="msg ok"></div>';
           t.firstChild.textContent = text;
           document.body.appendChild(t);
-          function close() { t.classList.add('toast-out'); setTimeout(function () { t.remove(); }, 300); }
-          t.addEventListener('click', close);
-          setTimeout(close, 7000);
+          setTimeout(function () { t.classList.add('toast-out'); setTimeout(function () { t.remove(); }, 300); }, 7000);
         })();
-      </script>
-    </section>`;
+      </script>`;
 }
 
 // ── Cuentas de Real-Debrid ──
@@ -385,7 +400,9 @@ function renderTape(it, i) {
           </button>`;
 }
 
-function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, focus }) {
+function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, tab }) {
+    // Sección: "movies" (por defecto), "series" o "wishlist".
+    tab = ["series", "wishlist"].includes(tab) ? tab : "movies";
     const entries = Object.entries(imdbStreams);
     const items = entries.map(([imdbId, s]) => {
         const summary = rdSummary(s, rdMaps);
@@ -418,14 +435,15 @@ function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, 
         };
     });
 
-    const counts = {
-        all: items.length,
-        movie: items.filter((i) => i.type === "movie").length,
-        series: items.filter((i) => i.type === "series").length,
-    };
+
+    // Solo las de esta sección (la ficha sigue teniendo los datos de todas).
+    const shown = tab === "wishlist" ? [] : items.filter((it) => it.type === (tab === "series" ? "series" : "movie"));
+    const noun = tab === "series"
+        ? { one: "serie", many: "series", title: "Series", icon: "tv" }
+        : { one: "película", many: "películas", title: "Películas", icon: "film" };
 
     // La última del JSON es la última añadida (se insertan al final).
-    const latest = items[items.length - 1];
+    const latest = shown[shown.length - 1];
     const hero = latest ? `
     <section class="hero" aria-label="Recién añadida">
       <div class="hero-bg" id="hero-bg">
@@ -448,15 +466,15 @@ function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, 
       </div>
     </section>` : "";
 
-    const grid = items.length === 0
+    const grid = shown.length === 0
         ? `<div class="empty-state">
-            ${icon("film", 44)}
-            <div class="big">El videoclub está vacío</div>
-            <p>Añade tu primera película para que aparezca en Stremio.</p>
-            <a class="btn btn-primary" href="/admin/add" style="margin-top:10px">${icon("plus", 18)} Añadir película</a>
+            ${icon(noun.icon, 44)}
+            <div class="big">Aún no hay ${noun.many}</div>
+            <p>Añade tu primera ${noun.one} para que aparezca en Stremio.</p>
+            <a class="btn btn-primary" href="/admin/add${tab === "series" ? "?type=series" : ""}" style="margin-top:10px">${icon("plus", 18)} Añadir ${noun.one}</a>
           </div>`
         : `${LIBRARY_ROWS.map((row) => {
-            const rowItems = items.slice().reverse().filter((it) => it.group === row.group);
+            const rowItems = shown.slice().reverse().filter((it) => it.group === row.group);
             return `<section class="shelf-row" data-row="${row.group}"${rowItems.length ? "" : " hidden"}>
           <div class="row-head">
             <h3 class="row-title">${row.title} <span class="count" data-row-count>${rowItems.length}</span></h3>
@@ -468,12 +486,9 @@ function renderListPage({ message, imdbStreams, rdMaps, accountInfos, wishlist, 
         <div class="empty-state" id="no-results" style="display:none">
           ${icon("search", 40)}
           <div class="big">Nada por aquí</div>
-          <p>Ninguna película coincide con la búsqueda o el filtro.</p>
+          <p>Nada coincide con la búsqueda.</p>
         </div>`;
 
-    const filterChip = (key, label) => counts[key] || key === "all"
-        ? `<button type="button" class="chip${key === "all" ? " active" : ""}" data-filter="${key}">${label} <span class="count">${counts[key]}</span></button>`
-        : "";
 
     // Datos de cada película para pintar la ficha en cliente. Se escapa "<"
     // para que ningún título pueda cerrar la etiqueta <script>.
@@ -487,7 +502,7 @@ ${headTags("Biblioteca · JFuster RD")}
 </head>
 <body>
   <div id="pull-refresh-indicator" class="pull-refresh-indicator">${icon("refresh", 18)}</div>
-  ${renderTopBar("library")}
+  ${renderTopBar(tab)}
   <div id="main-wrap">
   <main>
     ${message ? `<div class="toast" id="toast" role="status">${message}</div>
@@ -502,31 +517,24 @@ ${headTags("Biblioteca · JFuster RD")}
       })();
     </script>` : ""}
     ${renderAccountAlert(accountInfos)}
-    ${hero}
-    ${renderWishlist(wishlist)}
-    ${focus ? `<script>setTimeout(function () { var el = document.getElementById(${JSON.stringify(focus)}); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 150);</script>` : ""}
-
+    ${wishlistNewsToast(wishlist)}
+    ${tab === "wishlist" ? renderWishlist(wishlist) : `${hero}
     <section id="buscar">
       <div class="shelf-head">
-        <h2 class="shelf-title">Tu videoclub <span class="count" id="movie-count">${items.length}</span></h2>
+        <h2 class="shelf-title">${noun.title} <span class="count" id="movie-count">${shown.length}</span></h2>
       </div>
-      ${items.length ? `<div class="shelf-tools">
+      ${shown.length ? `<div class="shelf-tools">
         <div class="input-icon">
           ${icon("search", 18)}
-          <input class="input" id="search" type="search" placeholder="Buscar por título o id de IMDb..." autocomplete="off">
-        </div>
-        <div class="filters" role="toolbar" aria-label="Filtros">
-          ${counts.series ? filterChip("all", "Todas") : ""}
-          ${counts.series ? filterChip("movie", "Películas") : ""}
-          ${filterChip("series", "Series")}
+          <input class="input" id="search" type="search" placeholder="Buscar ${noun.many} por título..." autocomplete="off">
         </div>
       </div>` : ""}
       ${grid}
-    </section>
+    </section>`}
   </main>
   </div>
 
-  ${renderBottomNav("library")}
+  ${renderBottomNav(tab)}
 
   <div class="sheet-overlay" id="sheet-overlay">
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
@@ -1899,7 +1907,7 @@ ${headTags(`${editing ? "Editar" : "Añadir"} · JFuster RD`)}
         // ofrece añadirla otra vez.
         var addBtn = document.getElementById('wish-add');
         if (addBtn && WISH_IDS[id]) {
-          box.innerHTML = '<p>Ya está en tu <a href="/admin#deseos">lista de deseos</a>: la busco cada día.</p>';
+          box.innerHTML = '<p>Ya está en tu <a href="/admin?tab=wishlist">lista de deseos</a>: la busco cada día.</p>';
         }
       }
       function submitWish(action) {
@@ -2600,7 +2608,7 @@ module.exports = async (req, res) => {
                     title: entry ? (entry.title || "") : wish ? wish.name : "",
                     magnet: "",
                     poster: entry ? (entry.poster || "") : wish ? wish.poster : "",
-                    type: entry ? (entry.type || "movie") : wish ? wish.type : "movie",
+                    type: entry ? (entry.type || "movie") : wish ? wish.type : req.query.type === "series" ? "series" : "movie",
                     season: /^(all|\d+)$/.test(String(req.query.season || "")) ? String(req.query.season) : "1",
                     episode: /^\d+$/.test(String(req.query.episode || "")) ? String(req.query.episode) : "",
                     rdCache: Object.fromEntries(RD_ACCOUNTS.map((acc) => [acc.id, true])),
@@ -2609,7 +2617,7 @@ module.exports = async (req, res) => {
             }));
         }
         const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
-        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist: bundledWishlist() }));
+        return res.status(200).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist: bundledWishlist(), tab: req.query.tab }));
     }
 
     if (req.method !== "POST") {
@@ -2629,7 +2637,7 @@ module.exports = async (req, res) => {
     if (action === "wish-add" || action === "wish-remove") {
         const listPage = async (wishlist, message, status = 200) => {
             const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
-            return res.status(status).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist, message, focus: "deseos" }));
+            return res.status(status).send(renderListPage({ imdbStreams: IMDB_STREAMS, rdMaps, accountInfos, wishlist, message, tab: "wishlist" }));
         };
         try {
             if (!/^tt[0-9]+$/.test(String(imdbId || ""))) throw new Error("ID de IMDb inválido.");
@@ -2685,6 +2693,7 @@ module.exports = async (req, res) => {
                 }));
             }
             const removedName = current[imdbId].name || current[imdbId].title || imdbId;
+            const removedTab = current[imdbId].type === "series" ? "series" : "movies";
             // Todas sus copias (una serie puede tener una por temporada).
             const removedHashes = entryHashes(current[imdbId]);
             delete current[imdbId];
@@ -2696,6 +2705,8 @@ module.exports = async (req, res) => {
             return res.status(200).send(renderListPage({
                 imdbStreams: current,
                 message: `<div class="msg ok"><b>«${escapeHtml(removedName)}» eliminada.</b>${rdNote}</div>`,
+                wishlist: bundledWishlist(),
+                tab: removedTab,
             }));
         } catch (err) {
             return res.status(500).send(renderListPage({
@@ -2871,7 +2882,7 @@ module.exports = async (req, res) => {
         // redirigir a /admin, que usaría IMDB_STREAMS del último build —
         // desactualizado hasta que termine el redeploy de Vercel.
         const [rdMaps, accountInfos] = await Promise.all([fetchRdMaps(), loadAccountInfos()]);
-        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps, accountInfos, wishlist: wishlistNow }));
+        return res.status(200).send(renderListPage({ imdbStreams: current, message: successMsg, rdMaps, accountInfos, wishlist: wishlistNow, tab: contentType === "series" ? "series" : "movies" }));
     } catch (err) {
         return addPageError(500, `<div class="msg err">${escapeHtml(err.message)}</div>`);
     }
