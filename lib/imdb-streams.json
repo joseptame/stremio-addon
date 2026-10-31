@@ -72,5 +72,20 @@
     "name": "Gladiator",
     "poster": "https://images.metahub.space/poster/small/tt0172495/img",
     "type": "movie"
+  },
+  "tt7526136": {
+    "infoHash": "2e16b84cc2a3f0d65fbb6d153860f73185cb9631",
+    "sources": [
+      "tracker:http://www.todotorrents.com:2710/announce",
+      "tracker:http://tracker.openbittorrent.com:80/announce",
+      "tracker:http://tracker.publicbt.com:80/announce",
+      "tracker:http://tracker.bittorrent.am:80/announce",
+      "tracker:http://denis.stalker.h3q.com:6969/announce",
+      "tracker:http://tracker.prq.to/announce"
+    ],
+    "title": "En el corazón de la bestia",
+    "name": "Heart of the Beast",
+    "poster": "https://images.metahub.space/poster/small/tt7526136/img",
+    "type": "movie"
   }
 }
