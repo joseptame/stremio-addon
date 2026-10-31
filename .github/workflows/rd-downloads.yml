@@ -14,7 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      # CRON_SECRET (secreto del repo, mismo valor que en Vercel) protege la
+      # llamada; mientras no exista, el panel se fía del User-Agent.
       - name: Comprobar descargas terminadas
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           curl -fsS --max-time 60 -A "filmrd-actions" \
+            ${CRON_SECRET:+-H "Authorization: Bearer $CRON_SECRET"} \
             "https://stremio-addon-green.vercel.app/api/movie-details?cron=downloads"

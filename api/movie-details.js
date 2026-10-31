@@ -100,18 +100,20 @@ async function trimmedPlaylist(res, hlsUrl) {
     return res.status(200).send(out.join("\n"));
 }
 
-// Tarea diaria de Vercel (ver "crons" en vercel.json): vuelve a buscar la
-// lista de deseos. Solo la lanza Vercel: con CRON_SECRET configurado, por
-// su cabecera Authorization; si no, por su User-Agent.
-function isVercelCron(req) {
+// Tareas programadas (la diaria de Vercel y la de GitHub Actions). Con
+// CRON_SECRET configurado en Vercel (y como secreto del repo para el
+// workflow), solo vale la cabecera Authorization: Bearer <secreto>, que
+// Vercel ya manda sola en sus cron. Sin él, se mira el User-Agent (vale
+// para salir del paso, pero se puede falsificar).
+function isScheduledCall(req, userAgent) {
     const secret = (process.env.CRON_SECRET || "").trim();
     if (secret) return req.headers.authorization === `Bearer ${secret}`;
-    return /vercel-cron/i.test(req.headers["user-agent"] || "");
+    return userAgent.test(req.headers["user-agent"] || "");
 }
 
 module.exports = async (req, res) => {
     if (req.method === "GET" && req.query && req.query.cron === "wishlist") {
-        if (!isVercelCron(req)) return res.status(401).json({ error: "Solo para la tarea programada." });
+        if (!isScheduledCall(req, /vercel-cron/i)) return res.status(401).json({ error: "Solo para la tarea programada." });
         try {
             const result = await runWishlistCheck();
             // Aviso al móvil de las que han pasado a tener copias buenas.
@@ -130,10 +132,9 @@ module.exports = async (req, res) => {
 
     // Cada 15 min (GitHub Actions, ver .github/workflows/rd-downloads.yml):
     // aviso de las descargas de RD terminadas en ese rato. Sin estado: se
-    // mira la fecha de fin que da RD. No escribe nada, así que no hace
-    // falta protegerlo más que con el User-Agent del workflow.
+    // mira la fecha de fin que da RD.
     if (req.method === "GET" && req.query && req.query.cron === "downloads") {
-        if (!isVercelCron(req) && !/filmrd-actions/i.test(req.headers["user-agent"] || "")) {
+        if (!isScheduledCall(req, /vercel-cron|filmrd-actions/i)) {
             return res.status(401).json({ error: "Solo para la tarea programada." });
         }
         try {
